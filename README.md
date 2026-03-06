@@ -1,2 +1,2 @@
-# cigany-watch
+# smart-watch
 project work for embedded systems course on aalto
