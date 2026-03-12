@@ -1,1 +1,0 @@
-"""Smart watch backend package."""

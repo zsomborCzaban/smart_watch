@@ -1,3 +1,0 @@
-fastapi>=0.115,<1.0
-uvicorn>=0.34,<1.0
-bleak>=0.22,<1.0; platform_system == "Linux"

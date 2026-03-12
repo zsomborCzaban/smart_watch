@@ -10,10 +10,7 @@ import "./App.css";
 function App() {
   const [sessions, setSessions] = useState<HikingSession[]>([]);
   const [weight, setWeight] = useState(75);
-  const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
-  const isWatchConnected = useWatchStatus(
-    `${wsProtocol}://${window.location.host}/api/ws`,
-  );
+  const isWatchConnected = useWatchStatus(`ws://${window.location.host}/api/ws`);
 
   useEffect(() => {
     api.getAllSessions().then(setSessions).catch(console.error);
@@ -46,12 +43,8 @@ function App() {
       <div className="app-header">
         <h1>Hiking Tracker</h1>
         <div className="watch-status">
-          <span
-            className={`status-dot ${isWatchConnected ? "connected" : "disconnected"}`}
-          />
-          <span
-            className={`status-text ${isWatchConnected ? "connected" : "disconnected"}`}
-          >
+          <span className={`status-dot ${isWatchConnected ? "connected" : "disconnected"}`} />
+          <span className={`status-text ${isWatchConnected ? "connected" : "disconnected"}`}>
             {isWatchConnected ? "Connected" : "Disconnected"}
           </span>
         </div>
@@ -65,7 +58,10 @@ function App() {
         </div>
       )}
 
-      <Settings weight={weight} onWeightChange={handleWeightChange} />
+      <Settings
+        weight={weight}
+        onWeightChange={handleWeightChange}
+      />
 
       <SessionList sessions={pastSessions} onDelete={handleDelete} />
     </div>
