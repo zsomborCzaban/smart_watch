@@ -1,156 +1,248 @@
-import bluetooth
-import time
+"""Bluetooth Low Energy interface between the Raspberry Pi hub and the smartwatch.
 
+The hub operates as a BLE central (client). The smartwatch exposes a custom
+GATT service with two characteristics:
+
+* STEP_DATA_CHAR_UUID  – Notify  – watch → hub  (step-update JSON, req2)
+* CALORIE_CHAR_UUID    – Write   – hub  → watch (calorie-response JSON, req3)
+
+Incoming message format  (req2 + mandatory checksum field):
+    {"device_id": "str", "timestamp": "ISO-8601", "step_count": int,
+     "checksum": "CRC32-hex-8chars"}
+
+A step_count of -1 signals an explicit session-end event from the watch button.
+If no data is received for SESSION_TIMEOUT_SECONDS (3600 s), the session is
+automatically ended (req5).
+
+Outgoing message format (req3):
+    {"calories_burned": int}
+
+The CRC32 field guards against in-transit data corruption (req).
+BLE 5.0 native pairing / bonding provides link-layer encryption (req1).
+"""
+
+import asyncio
+import json
+import logging
+import zlib
+from datetime import datetime, timezone
+
+from bleak import BleakClient, BleakScanner
+from bleak.exc import BleakError
+
+import db
 import hike
 
-WATCH_BT_MAC = 'XX:XX:XX:XX:XX:XX'
-WATCH_BT_PORT = 1
+logger = logging.getLogger(__name__)
+
+# ── BLE configuration ─────────────────────────────────────────────────────────────
+
+# Replace with the actual BLE MAC address (Linux) or UUID (macOS) of the watch.
+WATCH_BT_ADDRESS = "XX:XX:XX:XX:XX:XX"
+
+# Custom GATT UUIDs – must match the watch firmware.
+STEP_SERVICE_UUID   = "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+STEP_DATA_CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8"  # Notify
+CALORIE_CHAR_UUID   = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"  # Write
+
+SESSION_TIMEOUT_SECONDS = 3600  # req5: auto-end the session after 1 h of silence
+RECONNECT_INTERVAL_SEC  = 2     # seconds to wait between reconnect attempts
+
+
+# ── Checksum helpers ──────────────────────────────────────────────────────────────
+
+def _compute_checksum(device_id: str, timestamp: str, step_count: int) -> str:
+    """Return an 8-character hex CRC32 over the concatenated key fields."""
+    data = f"{device_id}{timestamp}{step_count}".encode("utf-8")
+    return format(zlib.crc32(data) & 0xFFFF_FFFF, "08x")
+
+
+def _validate_payload(payload: dict) -> bool:
+    """Return True when the payload's checksum field matches the recomputed value.
+
+    Returns False (never raises) for any missing or incorrect checksum so that
+    corrupted messages are silently discarded rather than crashing the receiver.
+    """
+    try:
+        received = payload.get("checksum", "")
+        expected = _compute_checksum(
+            payload["device_id"], payload["timestamp"], payload["step_count"]
+        )
+        return received == expected
+    except (KeyError, TypeError):
+        return False
+
+
+# ── Core BLE manager ─────────────────────────────────────────────────────────────
 
 class HubBluetooth:
-    """Handles Bluetooth pairing and synchronization with the Watch.
+    """Manages the BLE link between the Raspberry Pi hub and the smartwatch.
 
-    Attributes:
-        connected: A boolean indicating if the connection is currently established with the Watch.
-        sock: the socket object created with bluetooth.BluetoothSocket(),
-              through which the Bluetooth communication is handled.
+    Runs two concurrent asyncio tasks:
+    * A reconnection loop that discovers the watch, subscribes to step
+      notifications, and handles data until the connection drops.
+    * A timeout loop that auto-ends the session if no data is received for
+      SESSION_TIMEOUT_SECONDS, regardless of BLE connection state (req5).
+
+    Usage::
+
+        hub = HubBluetooth()
+        await hub.run(state, hubdb)   # loops forever; reconnects automatically
     """
 
-    connected = False
-    sock = None
-    
-    def wait_for_connection(self):
-        """Synchronous function continuously trying to connect to the Watch by 2 sec intervals.
-        If a connection has been made, it sends the watch a `c` ASCII character as a confirmation.
-        """
+    # ── public entry point ──────────────────────────────────────────────────────
 
-        if not self.connected:
-            # try to connect every sec while connection is made
-            while True:
-                print("Waiting for connection...")
-                try:
-                    self.sock = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
-                    self.sock.connect((WATCH_BT_MAC, WATCH_BT_PORT))
-                    self.sock.settimeout(2)
-                    self.connected = True
-                    self.sock.send('c')
-                    print("Connected to Watch!")
-                    break
-                except bluetooth.btcommon.BluetoothError:
-                    time.sleep(1)
-                except Exception as e:
-                    print(e)
-                    print("Hub: Error occured while trying to connect to the Watch.")
+    async def run(
+        self,
+        state: hike.ActiveSessionState,
+        hubdb: db.HubDatabase,
+    ) -> None:
+        """Run the BLE connection loop and session-timeout checker concurrently."""
+        await asyncio.gather(
+            self._connection_loop(state, hubdb),
+            self._session_timeout_loop(state, hubdb),
+        )
 
-            print("Hub: Established Bluetooth connection with Watch!")
-        print("WARNING Hub: the has already connected via Bluetooth.")
+    # ── connection loop ────────────────────────────────────────────────────────
 
-    def synchronize(self, callback):
-        """Continuously tries to receive data from an established connection with the Watch.
-
-        If receives data, then transforms it to a list of `hike.HikeSession` object.
-        After that, calls the `callback` function with the transformed data.
-        Finally sends a `r` as a response to the Watch for successfully processing the
-        incoming data.
-
-        If does not receive data, then it tries to send `c` as a confirmation of the established
-        connection at every second to inform the Watch that the Hub is able to receive sessions.
-
-        Args:
-            callback: One parameter function able to accept a list[hike.HikeSession].
-                      Used to process incoming sessions arbitrarly
-
-        Raises:
-            KeyboardInterrupt: to be able to close a running application.
-        """
-        print("Synchronizing with watch...")
-        remainder = b''
+    async def _connection_loop(
+        self,
+        state: hike.ActiveSessionState,
+        hubdb: db.HubDatabase,
+    ) -> None:
         while True:
             try:
-                chunk = self.sock.recv(1024)
+                await self._connect_and_sync(state, hubdb)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.error(
+                    "BLE error: %s – retrying in %d s.", exc, RECONNECT_INTERVAL_SEC
+                )
+            state.bt_connected = False
+            await asyncio.sleep(RECONNECT_INTERVAL_SEC)
 
-                messages = chunk.split(b'\n')
-                messages[0] = remainder + messages[0]
-                remainder = messages.pop()
+    async def _connect_and_sync(
+        self,
+        state: hike.ActiveSessionState,
+        hubdb: db.HubDatabase,
+    ) -> None:
+        logger.info("Scanning for watch (%s)…", WATCH_BT_ADDRESS)
+        device = await BleakScanner.find_device_by_address(
+            WATCH_BT_ADDRESS, timeout=10.0
+        )
+        if device is None:
+            logger.warning("Watch not found – will retry.")
+            return
 
-                if len(messages):
-                    try:
-                        print(f"received messages: {messages}")
+        async with BleakClient(device, timeout=15.0) as client:
+            state.bt_connected = True
+            logger.info("Connected to watch via BLE 5.0.")
 
-                        sessions = HubBluetooth.messages_to_sessions(messages)
-                        callback(sessions)
-                        self.sock.send('r')
+            # Async notification handler: bleak calls it for every incoming
+            # GATT notification on STEP_DATA_CHAR_UUID.
+            async def _on_step_data(sender, raw: bytearray) -> None:  # noqa: ANN001
+                await self._handle_step_data(raw, client, state, hubdb)
 
-                        print(f"Saved. 'r' sent to the socket!")
+            await client.start_notify(STEP_DATA_CHAR_UUID, _on_step_data)
+            logger.info("Subscribed to step-data notifications.")
 
-                    except (AssertionError, ValueError) as e:
-                        print(e)
-                        print("WARNING: Receiver -> Message was corrupted. Aborting...")
+            # Keep the connection alive; bleak callbacks run on this loop.
+            while client.is_connected:
+                await asyncio.sleep(1)
 
-            except KeyboardInterrupt:
-                self.sock.close()
-                raise KeyboardInterrupt("Shutting down the receiver.")
+        logger.info("Watch disconnected.")
 
-            except bluetooth.btcommon.BluetoothError as bt_err:
-                if bt_err.errno == 11: # connection down
-                    print("Lost connection with the watch.")
-                    self.connected = False
-                    self.sock.close()
-                    break
-                elif bt_err.errno == None: # possibly occured by socket.settimeout
-                    self.sock.send('c')
-                    print("Reminder has been sent to the Watch about the attempt of the synchronization.")
+    # ── per-step notification handler ───────────────────────────────────────────
 
-    @staticmethod
-    def messages_to_sessions(messages: list[bytes]) -> list[hike.HikeSession]:
-        """Transforms multiple incoming messages to a list of hike.HikeSession objects.
+    async def _handle_step_data(
+        self,
+        raw: bytearray,
+        client: BleakClient,
+        state: hike.ActiveSessionState,
+        hubdb: db.HubDatabase,
+    ) -> None:
+        """Validate an incoming BLE notification, update state, and reply.
 
-        Args:
-            messages: list of bytes, in the form of the simple protocol between
-                      the Hub and the Watch.
-
-        Returns:
-            list[hike.HikeSession]: a list of hike.HikeSession objects representing the
-                                    interpreted messages.
+        Called at every step during an active session (req4).
+        Sends a calorie response back to the watch within the same call (req6).
         """
+        # — decode
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            logger.warning("BLE: cannot decode message – %s", exc)
+            return
 
-        return list(map(HubBluetooth.mtos, messages))
+        # — checksum (req: checksums ensure step-count data is not corrupted)
+        if not _validate_payload(payload):
+            logger.warning("BLE: checksum mismatch – message discarded.")
+            return
 
-    @staticmethod
-    def mtos(message: bytes) -> hike.HikeSession:
-        """Transforms a single message into a hike.HikeSession object.
+        step_count: int = payload["step_count"]
 
-        A single message is in the following format with 0->inf number of latitude and longitude pairs:
-            id;steps;km;lat1,long1;lat2,long2;...;\\n
+        # step_count == -1 → explicit session-end button press on the watch.
+        if step_count < 0:
+            logger.info("Session-end signal received from watch.")
+            await self._finalize_session(state, hubdb)
+            return
 
-        For example:
-            b'4;2425;324;64.83458747762428,24.83458747762428;...,...;\\n'
+        # — start new session on first step after idle
+        if not state.is_active:
+            try:
+                start_dt = datetime.fromisoformat(payload["timestamp"])
+            except (ValueError, KeyError):
+                start_dt = datetime.now(timezone.utc)
+            state.start_session(payload["device_id"], start_dt)
+            logger.info("Hiking session started for device '%s'.", payload["device_id"])
 
-        Args:
-            message: bytes to transform.
+        # — calculate and store updated calories
+        weight_kg = hubdb.get_weight()
+        calories = hike.calc_kcal(step_count, weight_kg)
+        state.update(step_count, calories)
 
-        Returns:
-            hike.HikeSession: representing a hiking session from transforming a message.
+        # — send calorie response to the watch (req3 / req6)
+        response = json.dumps({"calories_burned": calories}).encode("utf-8")
+        try:
+            await client.write_gatt_char(CALORIE_CHAR_UUID, response, response=False)
+        except BleakError as exc:
+            logger.warning("BLE: failed to write calorie response – %s", exc)
 
-        Raises:
-            AssertionError: if the message misses information, or if it is badly formatted.
+    # ── 1-hour session timeout ─────────────────────────────────────────────────────
+
+    async def _session_timeout_loop(
+        self,
+        state: hike.ActiveSessionState,
+        hubdb: db.HubDatabase,
+    ) -> None:
+        """Check for the 1-hour inactivity timeout every 60 seconds (req5).
+
+        Runs independently of the BLE connection so a session is always
+        ended even when the watch is physically out of range.
         """
-        m = message.decode('utf-8')
+        while True:
+            await asyncio.sleep(60)
+            if state.is_active and state.last_data_time is not None:
+                elapsed = (
+                    datetime.now(timezone.utc) - state.last_data_time
+                ).total_seconds()
+                if elapsed >= SESSION_TIMEOUT_SECONDS:
+                    logger.warning(
+                        "Session auto-ended: no data for %.0f s (req5).", elapsed
+                    )
+                    await self._finalize_session(state, hubdb)
 
-        # filtering because we might have a semi-column at the end of the message, right before the new-line character
-        parts = list(filter(lambda p: len(p) > 0, m.split(';')))
-        assert len(parts) >= 3, f"MessageProcessingError -> The incoming message doesn't contain enough information: {m}"
+    # ── helper ──────────────────────────────────────────────────────────────────────
 
-        hs = hike.HikeSession()
-        hs.id     = int(parts[0])
-        hs.steps  = int(parts[1])
-        hs.km     = float(parts[2])
-
-        def cvt_coord(c):
-            sc = c.split(',')
-            assert len(sc) == 2, f"MessageProcessingError -> Unable to process coordinate: {c}"
-            return float(sc[0]), float(sc[1])
-
-        if len(parts) > 3:
-            hs.coords = map(cvt_coord, parts[3:])
-
-        return hs
+    async def _finalize_session(
+        self,
+        state: hike.ActiveSessionState,
+        hubdb: db.HubDatabase,
+    ) -> None:
+        """Persist the active session to the database and clear the live state."""
+        session = state.finalize()
+        if session is None:
+            return
+        session.body_weight_kg = hubdb.get_weight()
+        hubdb.save_session(session)
+        logger.info("Session saved: %s", session)
