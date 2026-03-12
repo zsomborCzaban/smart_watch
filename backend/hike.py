@@ -1,27 +1,187 @@
-MET_HIKING = 6
-KCAL_PER_STEP = 0.04
+from __future__ import annotations
+
+import threading
+from datetime import datetime, timezone
+from typing import Optional
+
+# ── Calorie constants ─────────────────────────────────────────────────────────
+MET_HIKING = 6.0          # Metabolic Equivalent of Task for hiking
+SECONDS_PER_STEP = 0.5    # assumed average hiking pace (steps per second)
+HOURS_PER_STEP = SECONDS_PER_STEP / 3600.0
+AVERAGE_STRIDE_M = 0.75   # average hiking stride length in metres
+DEFAULT_WEIGHT_KG = 70.0  # fallback body weight when none is stored
+
+
+def calc_kcal(steps: int, weight_kg: float) -> int:
+    """MET-based calorie estimate adjusted for body weight.
+
+    Formula: kcal = MET × weight_kg × (steps × time_per_step_hours)
+
+    Args:
+        steps: total step count.
+        weight_kg: user body weight in kilograms.
+
+    Returns:
+        Kilocalories burned rounded to the nearest integer.
+    """
+    return round(MET_HIKING * weight_kg * HOURS_PER_STEP * steps)
+
+
+# ── Completed session model ───────────────────────────────────────────────────
 
 class HikeSession:
-    id = 0
-    km = 0
-    steps = 0
-    kcal = -1
-    coords = []
+    """A completed hiking session stored in the database."""
 
-    # represents a computationally intensive calculation done by lazy execution.
-    def calc_kcal(self):
-        self.kcal = MET_HIKING * KCAL_PER_STEP * self.steps
+    def __init__(
+        self,
+        session_id: int = 0,
+        device_id: str = "",
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+        duration_seconds: float = 0.0,
+        steps: int = 0,
+        calories_burnt: int = 0,
+        body_weight_kg: float = DEFAULT_WEIGHT_KG,
+    ):
+        self.id = session_id
+        self.device_id = device_id
+        self.start_time = start_time
+        self.end_time = end_time
+        self.duration_seconds = duration_seconds
+        self.steps = steps
+        self.calories_burnt = calories_burnt
+        self.body_weight_kg = body_weight_kg
 
-    def __repr__(self):
-        return f"HikeSession{{{self.id}, {self.km}(km), {self.steps}(steps), {self.kcal:.2f}(kcal)}}"
+    def to_dict(self) -> dict:
+        """Serialise to the camelCase JSON shape expected by the web UI."""
+        return {
+            "isActive": False,
+            "sessionId": str(self.id),
+            "startTime": self.start_time.isoformat() if self.start_time else None,
+            "endTime": self.end_time.isoformat() if self.end_time else None,
+            "stepCount": self.steps,
+            "burnedCalories": self.calories_burnt,
+            "distanceWalked": round(self.steps * AVERAGE_STRIDE_M),
+        }
 
-def to_list(s: HikeSession) -> list:
-    return [s.id, s.km, s.steps, s.kcal]
+    def __repr__(self) -> str:
+        return (
+            f"HikeSession({self.id}, device={self.device_id!r}, "
+            f"steps={self.steps}, kcal={self.calories_burnt})"
+        )
 
-def from_list(l: list) -> HikeSession:
-    s = HikeSession()
-    s.id = l[0]
-    s.km = l[1]
-    s.steps = l[2]
-    s.kcal = l[3]
-    return s
+
+def from_row(row: tuple) -> HikeSession:
+    """Construct a HikeSession from a database row tuple.
+
+    Expected column order (matches db.py SELECT):
+        session_id, device_id, start_time, end_time,
+        duration_seconds, steps, calories_burnt, body_weight_kg
+    """
+    (
+        session_id, device_id, start_time_str, end_time_str,
+        duration_seconds, steps, calories_burnt, body_weight_kg,
+    ) = row
+    return HikeSession(
+        session_id=session_id,
+        device_id=device_id,
+        start_time=datetime.fromisoformat(start_time_str) if start_time_str else None,
+        end_time=datetime.fromisoformat(end_time_str) if end_time_str else None,
+        duration_seconds=duration_seconds,
+        steps=steps,
+        calories_burnt=calories_burnt,
+        body_weight_kg=body_weight_kg,
+    )
+
+
+# ── Live session state ────────────────────────────────────────────────────────
+
+class ActiveSessionState:
+    """Thread-safe shared state for the currently active hiking session.
+
+    Both the BLE receiver (asyncio) and the FastAPI web server read from and
+    write to this object concurrently. A threading.Lock serialises all mutations.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.is_active: bool = False
+        self.device_id: str = ""
+        self.start_time: Optional[datetime] = None
+        self.step_count: int = 0
+        self.calories_burnt: int = 0
+        self.last_data_time: Optional[datetime] = None
+        self.bt_connected: bool = False
+
+    def start_session(self, device_id: str, start_time: datetime) -> None:
+        """Begin a new session; resets all counters."""
+        with self._lock:
+            self.is_active = True
+            self.device_id = device_id
+            self.start_time = start_time
+            self.step_count = 0
+            self.calories_burnt = 0
+            self.last_data_time = datetime.now(timezone.utc)
+
+    def update(self, step_count: int, calories_burnt: int) -> None:
+        """Update step / calorie counters and refresh the data-received timestamp."""
+        with self._lock:
+            self.step_count = step_count
+            self.calories_burnt = calories_burnt
+            self.last_data_time = datetime.now(timezone.utc)
+
+    def finalize(self) -> Optional[HikeSession]:
+        """Atomically end the active session and return it as a HikeSession.
+
+        Returns None if no session was active.
+        Clears all counters so the state is ready for the next session.
+        """
+        with self._lock:
+            if not self.is_active:
+                return None
+            now = datetime.now(timezone.utc)
+            duration = (now - self.start_time).total_seconds() if self.start_time else 0.0
+            session = HikeSession(
+                device_id=self.device_id,
+                start_time=self.start_time,
+                end_time=now,
+                duration_seconds=duration,
+                steps=self.step_count,
+                calories_burnt=self.calories_burnt,
+            )
+            self.is_active = False
+            self.step_count = 0
+            self.calories_burnt = 0
+            self.last_data_time = None
+            return session
+
+    def snapshot(self) -> dict:
+        """Return a thread-safe JSON-serialisable snapshot for API responses.
+
+        Provides all fields expected by the web UI (req9) plus the WebSocket
+        `connected` boolean consumed by useWatchStatus.
+        """
+        with self._lock:
+            if self.is_active and self.start_time:
+                now = datetime.now(timezone.utc)
+                total_s = int((now - self.start_time).total_seconds())
+                h, rem = divmod(total_s, 3600)
+                m, s = divmod(rem, 60)
+                session_time_iso = f"PT{h:02d}H{m:02d}M{s:02d}S"
+                start_iso = self.start_time.isoformat()
+            else:
+                session_time_iso = None
+                start_iso = None
+
+            return {
+                "isActive": self.is_active,
+                "sessionId": "active" if self.is_active else None,
+                "startTime": start_iso,
+                "endTime": None,
+                "stepCount": self.step_count,
+                "burnedCalories": self.calories_burnt,
+                "distanceWalked": round(self.step_count * AVERAGE_STRIDE_M),
+                # extra fields for WebSocket / requirements
+                "connected": self.bt_connected,
+                "hikeSessionTime": session_time_iso,
+            }
