@@ -1,4 +1,8 @@
-pybluez==0.23
-flask==1.1.2
-pillow==8.1.2
-# unicornhathd=0.0.4 # you need to install this as sudo
+# BLE (replaces PyBluez / RFCOMM – works with BlueZ on Raspberry Pi OS)
+bleak>=0.21.0
+
+# HTTPS / WebSocket server (replaces Flask)
+fastapi>=0.100.0
+uvicorn[standard]>=0.23.0
+websockets>=11.0
+pydantic>=2.0.0
