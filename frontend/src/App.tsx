@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ActiveSession } from "./components/ActiveSession";
 import { SessionList } from "./components/SessionList";
 import { Settings } from "./components/Settings";
+import { useWatchStatus } from "./hooks/useWatchStatus";
 import type { HikingSession } from "./types";
 import * as api from "./api";
 import "./App.css";
@@ -9,7 +10,7 @@ import "./App.css";
 function App() {
   const [sessions, setSessions] = useState<HikingSession[]>([]);
   const [weight, setWeight] = useState(75);
-  const [isWatchConnected] = useState(false);
+  const isWatchConnected = useWatchStatus(`ws://${window.location.host}/api/ws`);
 
   useEffect(() => {
     api.getAllSessions().then(setSessions).catch(console.error);
