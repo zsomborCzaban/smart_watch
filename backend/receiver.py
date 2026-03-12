@@ -1,42 +1,62 @@
-import time
-import sqlite3
+"""Main entry point for the Smart Watch hiking tracker backend.
 
-import hike
-import db
+Runs the BLE receiver and the HTTPS web server concurrently in the same
+asyncio event loop so real-time step data flows directly to both the
+database and the web UI without inter-process communication.
+
+Quick start
+-----------
+1. Install dependencies::
+
+       pip install -r requirements.txt
+
+2. Generate a self-signed TLS certificate (optional but recommended)::
+
+       openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem \\
+           -days 365 -nodes -subj "/CN=smartwatch-hub"
+
+3. Set WATCH_BT_ADDRESS in bt.py to the smartwatch’s BLE MAC address.
+
+4. Run::
+
+       python receiver.py
+"""
+
+import asyncio
+import logging
+
+import uvicorn
+
 import bt
+import db
+import hike
+import wserver
 
-hubdb = db.HubDatabase()
-hubbt = bt.HubBluetooth()
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
 
-def process_sessions(sessions: list[hike.HikeSession]):
-    """Callback function to process sessions.
 
-    Calculates the calories for a hiking session.
-    Saves the session into the database.
+async def main() -> None:
+    hubdb  = db.HubDatabase()
+    state  = hike.ActiveSessionState()
+    wserver.configure(hubdb, state)
 
-    Args:
-        sessions: list of `hike.HikeSession` objects to process
-    """
+    ble_hub = bt.HubBluetooth()
+    server  = uvicorn.Server(wserver.get_uvicorn_config())
 
-    for s in sessions:
-        s.calc_kcal()
-        hubdb.save(s)
+    logger.info("Smart Watch backend starting…")
+    await asyncio.gather(
+        ble_hub.run(state, hubdb),
+        server.serve(),
+        wserver.broadcast_state(),
+    )
 
-def main():
-    print("Starting Bluetooth receiver.")
-    try:
-        while True:
-            hubbt.wait_for_connection()
-            hubbt.synchronize(callback=process_sessions)
-            
-    except KeyboardInterrupt:
-        print("CTRL+C Pressed. Shutting down the server...")
-
-    except Exception as e:
-        print(f"Unexpected shutdown...")
-        print(f"ERROR: {e}")
-        hubbt.sock.close()
-        raise e
 
 if __name__ == "__main__":
-    main()
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Keyboard interrupt – shutting down.")
