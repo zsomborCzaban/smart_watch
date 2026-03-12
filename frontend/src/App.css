@@ -1,6 +1,260 @@
 #root {
-  max-width: 1280px;
+  max-width: 70%;
+  width: 100%;
   margin: 0 auto;
+  padding: 2rem 4rem;
+  text-align: left;
+  box-sizing: border-box;
+}
+
+.app-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 2rem;
+}
+
+.app-header h1 {
+  margin: 0;
+}
+
+/* ---------- Settings ---------- */
+.settings {
+  margin-bottom: 2rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.settings-toggle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 0.85rem 1.25rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: none;
+  color: inherit;
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 0;
+}
+
+.settings-toggle:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: transparent;
+}
+
+.settings-toggle .toggle-icon {
+  font-size: 0.8rem;
+  opacity: 0.5;
+  transition: transform 0.2s;
+}
+
+.settings-body {
+  padding: 1rem 1.25rem;
+}
+
+.settings-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.settings-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+}
+
+.weight-input-group {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.weight-input-group input {
+  width: 80px;
+  padding: 0.35em 0.6em;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  font-size: 0.95rem;
+}
+
+.weight-input-group button {
+  padding: 0.35em 0.9em;
+  font-size: 0.85rem;
+}
+
+.watch-status {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-dot.connected {
+  background: #4ade80;
+  box-shadow: 0 0 8px rgba(74, 222, 128, 0.6);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.status-dot.disconnected {
+  background: #f87171;
+  box-shadow: 0 0 6px rgba(248, 113, 113, 0.4);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.status-text {
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.status-text.connected {
+  color: #4ade80;
+}
+
+.status-text.disconnected {
+  color: #f87171;
+}
+
+/* ---------- Active Session ---------- */
+.active-session {
+  margin-bottom: 2rem;
+}
+
+.active-session h2 {
+  font-size: 1.2rem;
+}
+
+.session-card {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.session-card.active {
+  border-color: #4ade80;
+  box-shadow: 0 0 12px rgba(74, 222, 128, 0.15);
+}
+
+.session-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.75rem;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+
+.stat-value {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+/* ---------- Session List ---------- */
+.session-list h2 {
+  font-size: 1.2rem;
+}
+
+.session-header {
+  display: flex;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+}
+
+.expand-icon {
+  font-size: 0.8rem;
+  opacity: 0.5;
+}
+
+.session-details {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.delete-btn {
+  margin-top: 0.75rem;
+  background: #ef44441a;
+  color: #f87171;
+  border: 1px solid #ef444455;
+  font-size: 0.85rem;
+}
+
+.delete-btn:hover {
+  background: #ef444433;
+  border-color: #f87171;
+}
+
+.no-active-card {
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
   padding: 2rem;
   text-align: center;
+  margin-bottom: 2rem;
+  opacity: 0.6;
+}
+
+.no-active-card p {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.empty-message {
+  opacity: 0.5;
+  font-style: italic;
+}
+
+@media (prefers-color-scheme: light) {
+  .settings,
+  .session-card {
+    border-color: rgba(0, 0, 0, 0.12);
+  }
+
+  .settings-toggle {
+    background: rgba(0, 0, 0, 0.03);
+  }
+
+  .settings-toggle:hover {
+    background: rgba(0, 0, 0, 0.06);
+  }
+
+  .session-details {
+    border-top-color: rgba(0, 0, 0, 0.08);
+  }
+
+  .weight-input-group input {
+    border-color: rgba(0, 0, 0, 0.2);
+    background: rgba(0, 0, 0, 0.04);
+  }
+
+  .no-active-card {
+    border-color: rgba(0, 0, 0, 0.2);
+  }
 }
