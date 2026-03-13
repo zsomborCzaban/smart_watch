@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 interface Props {
   weight: number;
@@ -8,6 +8,10 @@ interface Props {
 export function Settings({ weight, onWeightChange }: Props) {
   const [inputValue, setInputValue] = useState(weight.toString());
   const [isOpen, setIsOpen] = useState(false);
+
+  useEffect(() => {
+    setInputValue(weight.toString());
+  }, [weight]);
 
   const handleSave = () => {
     const parsed = parseFloat(inputValue);
