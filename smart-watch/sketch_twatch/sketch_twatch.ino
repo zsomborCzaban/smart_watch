@@ -191,7 +191,7 @@ void updateTopDisplay() {
     ttgo->tft->setTextColor(TFT_ORANGE);
     ttgo->tft->drawString("kcal: " + String(currentCalories), 120, 25, 2);
     ttgo->tft->setTextColor(TFT_WHITE);
-    ttgo->tft->drawString(deviceConnected ? "BLE: OK" : "BLE: DC", 10, 45, 2);
+    ttgo->tft->drawString(deviceConnected ? "BLE: Ok" : "BLE: Disconnected", 10, 45, 2);
     ttgo->tft->setTextColor(TFT_YELLOW);
     ttgo->tft->drawString("MAC: " + bleMacAddress, 10, 65, 1);
     ttgo->tft->setTextColor(TFT_WHITE);
