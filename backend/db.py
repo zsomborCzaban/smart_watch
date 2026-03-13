@@ -13,11 +13,12 @@ Security notes
 
 import sqlite3
 import threading
+from pathlib import Path
 from typing import Optional
 
 import hike
 
-DB_FILE_NAME = "sessions.db"
+DB_FILE_NAME = Path(__file__).resolve().with_name("sessions.db")
 
 _CREATE_SESSIONS_TABLE = """
 CREATE TABLE IF NOT EXISTS sessions (
