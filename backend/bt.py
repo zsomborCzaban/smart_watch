@@ -24,6 +24,7 @@ BLE 5.0 native pairing / bonding provides link-layer encryption (req1).
 import asyncio
 import json
 import logging
+import traceback
 import zlib
 from datetime import datetime, timezone
 
@@ -119,6 +120,7 @@ class HubBluetooth:
                 logger.error(
                     "BLE error: %s – retrying in %d s.", exc, RECONNECT_INTERVAL_SEC
                 )
+                traceback.print_exc()
             state.bt_connected = False
             await asyncio.sleep(RECONNECT_INTERVAL_SEC)
 
