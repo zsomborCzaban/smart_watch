@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 # ── BLE configuration ─────────────────────────────────────────────────────────────
 
 # Replace with the actual BLE MAC address (Linux) or UUID (macOS) of the watch.
-WATCH_BT_ADDRESS = "44:17:93:88:d0:8e"
+WATCH_BT_ADDRESS = "44:17:93:88:D0:8E"
 
 # Custom GATT UUIDs – must match the watch firmware.
 STEP_SERVICE_UUID   = "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
