@@ -113,8 +113,8 @@ class HubBluetooth:
         while True:
             try:
                 devices = await BleakScanner.discover()
+                print('Found BLE devices:')
                 for d in devices:
-                    print('Found BLE devices:')
                     print(d)
                 await self._connect_and_sync(state, hubdb)
             except asyncio.CancelledError:
