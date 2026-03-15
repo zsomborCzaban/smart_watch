@@ -10,12 +10,18 @@
 #include <LilyGoWatch.h>
 #include <vector>
 
+// Forward declarations
+void drawUI();
+void updateTopDisplay();
+void handleTouch(int16_t x, int16_t y);
+
 TTGOClass *ttgo;
 
 // --- BLE State ---
 BLEServer* pServer = NULL;
 BLECharacteristic* pNotifyChar = NULL;
 BLECharacteristic* pCalorieChar = NULL;
+BLECharacteristic* pSyncTimeChar = NULL;
 bool deviceConnected = false;
 bool oldDeviceConnected = false;
 String bleMacAddress = "";
@@ -23,6 +29,7 @@ String bleMacAddress = "";
 #define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 #define STEP_DATA_CHAR_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
 #define CALORIE_CHAR_UUID   "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
+#define SYNC_TIME_CHAR_UUID "6e400004-b5a3-f393-e0a9-e50e24dcca9e"
 
 enum SessionState { STOPPED, ACTIVE, PAUSED };
 SessionState currentState = STOPPED;
@@ -55,13 +62,40 @@ class CalorieCallback: public BLECharacteristicCallbacks {
     }
 };
 
+class TimeSyncCallback: public BLECharacteristicCallbacks {
+    void onWrite(BLECharacteristic *pChar) {
+        std::string rxValue = pChar->getValue();
+        if (rxValue.length() > 0) {
+            String payload = String(rxValue.c_str());
+            int colonIndex = payload.indexOf(':');
+            int braceIndex = payload.indexOf('}');
+            if (colonIndex != -1 && braceIndex != -1) {
+                String timestampStr = payload.substring(colonIndex + 1, braceIndex);
+                timestampStr.trim();
+                time_t unixTime = timestampStr.toInt();
+                struct timeval tv = {unixTime, 0};
+                settimeofday(&tv, nullptr);
+                Serial.println("Time synced from backend: " + timestampStr);
+            }
+        }
+    }
+};
+
 class MyServerCallbacks: public BLEServerCallbacks {
     void onConnect(BLEServer* pServer) { deviceConnected = true; };
     void onDisconnect(BLEServer* pServer) { deviceConnected = false; }
 };
 
+String getCurrentTimestamp() {
+    time_t now = time(nullptr);
+    struct tm* timeinfo = gmtime(&now);
+    char buffer[30];
+    strftime(buffer, sizeof(buffer), "%Y-%m-%dT%H:%M:%SZ", timeinfo);
+    return String(buffer);
+}
+
 String generateJSONPayload(int32_t steps) {
-    String timestamp = "2026-03-13T12:00:00Z"; 
+    String timestamp = getCurrentTimestamp();
     String dataToHash = deviceId + timestamp + String(steps);
     uint32_t checksum_num = crc32_le(0, (const uint8_t*)dataToHash.c_str(), dataToHash.length());
     char checksum_hex[9];
@@ -99,6 +133,9 @@ void setup() {
 
     pCalorieChar = pService->createCharacteristic(CALORIE_CHAR_UUID, BLECharacteristic::PROPERTY_WRITE);
     pCalorieChar->setCallbacks(new CalorieCallback());
+
+    pSyncTimeChar = pService->createCharacteristic(SYNC_TIME_CHAR_UUID, BLECharacteristic::PROPERTY_WRITE);
+    pSyncTimeChar->setCallbacks(new TimeSyncCallback());
 
     pService->start();
 
@@ -161,11 +198,17 @@ void handleTouch(int16_t x, int16_t y) {
             currentSteps = 0; currentCalories = 0; offlineCache.clear();
             sendOrCache(generateJSONPayload(0));
         } else if (x >= 120 && currentState != STOPPED) {
-            currentState = STOPPED; sendOrCache(generateJSONPayload(-1));
+            currentState = STOPPED; 
+            sendOrCache(generateJSONPayload(-1));
         }
     } else if (y >= 160) {
-        if (x < 120 && currentState == ACTIVE) currentState = PAUSED;
-        else if (x >= 120 && currentState == PAUSED) currentState = ACTIVE;
+        if (x < 120 && currentState == ACTIVE) {
+            currentState = PAUSED;
+            sendOrCache(generateJSONPayload(-2)); // -2 signals PAUSE
+        } else if (x >= 120 && currentState == PAUSED) {
+            currentState = ACTIVE;
+            sendOrCache(generateJSONPayload(-3)); // -3 signals RESUME
+        }
     }
     drawUI(); 
 }
