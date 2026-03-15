@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
+import type { HikingSession } from "../types";
 
 export function useWatchStatus(url: string) {
   const [isConnected, setIsConnected] = useState(false);
+  const [activeSession, setActiveSession] = useState<HikingSession | null>(null);
 
   useEffect(() => {
     let ws: WebSocket | null = null;
@@ -14,8 +16,15 @@ export function useWatchStatus(url: string) {
         try {
           const data = JSON.parse(event.data);
           console.log("Received WebSocket message:", data);
-          if (typeof data.connected === "boolean") {
-            setIsConnected(data.connected);
+          if (typeof data.type === "string") {
+            if (data.type === "session_update") {
+              if(data.isActive === true){
+                setActiveSession(data);
+              }else{
+                setActiveSession(null);
+              }
+              setIsConnected(data.connected);
+            }
           }
         } catch {
           // ignore malformed messages
@@ -40,5 +49,5 @@ export function useWatchStatus(url: string) {
     };
   }, [url]);
 
-  return isConnected;
+  return { isConnected, activeSession };
 }
