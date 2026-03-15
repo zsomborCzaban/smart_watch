@@ -1,4 +1,4 @@
-import { formatDateTime } from "../format";
+import { formatDateTime, parseIsoInterval } from "../format";
 import type { HikingSession } from "../types";
 
 interface Props {
@@ -6,6 +6,7 @@ interface Props {
 }
 
 export function ActiveSession({ session }: Props) {
+  const elapsedTime = parseIsoInterval(session.hikeSessionTime);
   return (
     <section className="active-session">
       <h2>Active Session</h2>
@@ -19,9 +20,7 @@ export function ActiveSession({ session }: Props) {
           </div>
           <div className="stat">
             <span className="stat-label">Steps</span>
-            <span className="stat-value">
-              {session.stepCount}
-            </span>
+            <span className="stat-value">{session.stepCount}</span>
           </div>
           <div className="stat">
             <span className="stat-label">Calories</span>
@@ -33,6 +32,18 @@ export function ActiveSession({ session }: Props) {
             <span className="stat-label">Distance</span>
             <span className="stat-value">
               {(session.distanceWalked / 1000).toFixed(2)} km
+            </span>
+          </div>
+          <div className="stat">
+            <span className="stat-label">Elapsed time:</span>
+            <span className="stat-value">
+              {elapsedTime.hours.toString().padStart(2, "0")}:{elapsedTime.minutes.toString().padStart(2, "0")}:{elapsedTime.seconds.toString().padStart(2, "0")}
+            </span>
+          </div>
+          <div className="stat">
+            <span className="stat-label">Status:</span>
+            <span className="stat-value">
+              {session.sessionId === "active" ? "Active" : "Paused"}
             </span>
           </div>
         </div>

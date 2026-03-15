@@ -1,4 +1,4 @@
-const dateFormatter = new Intl.DateTimeFormat('en-GB', {
+const dateFormatter = new Intl.DateTimeFormat("en-GB", {
   month: "short",
   day: "numeric",
   weekday: "short",
@@ -6,7 +6,7 @@ const dateFormatter = new Intl.DateTimeFormat('en-GB', {
   minute: "2-digit",
 });
 
-const dateTimeFormatter = new Intl.DateTimeFormat('en-GB', {
+const dateTimeFormatter = new Intl.DateTimeFormat("en-GB", {
   year: "numeric",
   month: "short",
   day: "numeric",
@@ -22,3 +22,15 @@ export function formatDateTime(iso: string): string {
   if (!iso) return "—";
   return dateTimeFormatter.format(new Date(iso));
 }
+
+export const parseIsoInterval = (duration?: string) => {
+  const regex = /PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/;
+  const matches = duration?.match(regex);
+  if (!matches) return { hours: 0, minutes: 0, seconds: 0 };
+
+  const hours = parseInt(matches[1] || "0");
+  const minutes = parseInt(matches[2] || "0");
+  const seconds = parseInt(matches[3] || "0");
+
+  return { hours, minutes, seconds };
+};
