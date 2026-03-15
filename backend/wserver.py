@@ -73,16 +73,6 @@ def configure(hubdb: "db.HubDatabase", state: "hike.ActiveSessionState") -> None
 
 # ── REST endpoints ─────────────────────────────────────────────────────────────
 
-@app.get("/api/activeSession")
-async def get_active_session() -> dict[str, Any]:
-    """Return the live session snapshot (req9). 404 when no session is active."""
-    if _state is None:
-        raise HTTPException(status_code=503, detail="Service not ready")
-    if not _state.is_active:
-        raise HTTPException(status_code=404, detail="No active session")
-    return _state.snapshot()
-
-
 @app.get("/api/allSessions")
 async def get_all_sessions() -> list[dict[str, Any]]:
     """Return all completed sessions plus the active session (if any).

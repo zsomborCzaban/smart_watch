@@ -45,6 +45,7 @@ WATCH_BT_ADDRESS = "44:17:93:88:D0:8E"
 STEP_SERVICE_UUID   = "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 STEP_DATA_CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8"  # Notify
 CALORIE_CHAR_UUID   = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"  # Write
+SYNC_TIME_CHAR_UUID = "6e400004-b5a3-f393-e0a9-e50e24dcca9e"  # Write
 
 SESSION_TIMEOUT_SECONDS = 3600  # req5: auto-end the session after 1 h of silence
 RECONNECT_INTERVAL_SEC  = 5     # seconds to wait between reconnect attempts
@@ -149,6 +150,9 @@ class HubBluetooth:
             await client.start_notify(STEP_DATA_CHAR_UUID, _on_step_data)
             logger.info("Subscribed to step-data notifications.")
 
+            # Send current time to the watch for synchronization
+            await self._sync_time_with_watch(client)
+
             # Keep the connection alive; bleak callbacks run on this loop.
             while client.is_connected:
                 await asyncio.sleep(1)
@@ -183,10 +187,21 @@ class HubBluetooth:
 
         step_count: int = payload["step_count"]
 
-        # step_count == -1 → explicit session-end button press on the watch.
-        if step_count < 0:
+        # Handle special signals from the watch
+        if step_count == -1:
+            # Explicit session-end button press on the watch
             logger.info("Session-end signal received from watch.")
             await self._finalize_session(state, hubdb)
+            return
+        elif step_count == -2:
+            # Pause signal
+            state.pause()
+            logger.info("Session paused.")
+            return
+        elif step_count == -3:
+            # Resume signal
+            state.resume()
+            logger.info("Session resumed.")
             return
 
         # — start new session on first step after idle
@@ -233,6 +248,17 @@ class HubBluetooth:
                         "Session auto-ended: no data for %.0f s (req5).", elapsed
                     )
                     await self._finalize_session(state, hubdb)
+
+    async def _sync_time_with_watch(self, client: BleakClient) -> None:
+        """Send the current Unix timestamp to the watch for time synchronization."""
+        try:
+            import time
+            unix_timestamp = int(time.time())
+            payload = json.dumps({"timestamp": unix_timestamp}).encode("utf-8")
+            await client.write_gatt_char(SYNC_TIME_CHAR_UUID, payload, response=False)
+            logger.info("Time synced to watch: %d (Unix timestamp)", unix_timestamp)
+        except Exception as exc:
+            logger.warning("BLE: failed to sync time with watch – %s", exc)
 
     # ── helper ──────────────────────────────────────────────────────────────────────
 

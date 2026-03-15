@@ -107,6 +107,7 @@ class ActiveSessionState:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self.is_active: bool = False
+        self.is_paused: bool = False
         self.device_id: str = ""
         self.start_time: Optional[datetime] = None
         self.step_count: int = 0
@@ -118,6 +119,7 @@ class ActiveSessionState:
         """Begin a new session; resets all counters."""
         with self._lock:
             self.is_active = True
+            self.is_paused = False
             self.device_id = device_id
             self.start_time = start_time
             self.step_count = 0
@@ -130,6 +132,18 @@ class ActiveSessionState:
             self.step_count = step_count
             self.calories_burnt = calories_burnt
             self.last_data_time = datetime.now(timezone.utc)
+
+    def pause(self) -> None:
+        """Pause the active session."""
+        with self._lock:
+            if self.is_active:
+                self.is_paused = True
+
+    def resume(self) -> None:
+        """Resume the paused session."""
+        with self._lock:
+            if self.is_active:
+                self.is_paused = False
 
     def finalize(self) -> Optional[HikeSession]:
         """Atomically end the active session and return it as a HikeSession.
@@ -151,6 +165,7 @@ class ActiveSessionState:
                 calories_burnt=self.calories_burnt,
             )
             self.is_active = False
+            self.is_paused = False
             self.step_count = 0
             self.calories_burnt = 0
             self.last_data_time = None
@@ -176,6 +191,7 @@ class ActiveSessionState:
 
             return {
                 "isActive": self.is_active,
+                "isPaused": self.is_paused,
                 "sessionId": "active" if self.is_active else None,
                 "startTime": start_iso,
                 "endTime": None,
