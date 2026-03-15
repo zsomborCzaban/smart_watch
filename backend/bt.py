@@ -47,7 +47,7 @@ STEP_DATA_CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8"  # Notify
 CALORIE_CHAR_UUID   = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"  # Write
 
 SESSION_TIMEOUT_SECONDS = 3600  # req5: auto-end the session after 1 h of silence
-RECONNECT_INTERVAL_SEC  = 2     # seconds to wait between reconnect attempts
+RECONNECT_INTERVAL_SEC  = 5     # seconds to wait between reconnect attempts
 
 
 # ── Checksum helpers ──────────────────────────────────────────────────────────────

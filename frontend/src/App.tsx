@@ -9,7 +9,7 @@ import "./App.css";
 
 function App() {
   const [sessions, setSessions] = useState<HikingSession[]>([]);
-  const [weight, setWeight] = useState(75);
+  const [weight, setWeight] = useState(0);
   const isWatchConnected = useWatchStatus(`ws://${window.location.host}/api/ws`);
 
   useEffect(() => {

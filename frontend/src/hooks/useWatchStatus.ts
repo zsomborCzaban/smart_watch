@@ -13,6 +13,7 @@ export function useWatchStatus(url: string) {
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
+          console.log("Received WebSocket message:", data);
           if (typeof data.connected === "boolean") {
             setIsConnected(data.connected);
           }
