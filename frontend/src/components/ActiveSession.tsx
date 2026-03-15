@@ -20,7 +20,7 @@ export function ActiveSession({ session }: Props) {
           <div className="stat">
             <span className="stat-label">Steps</span>
             <span className="stat-value">
-              {session.stepCount.toLocaleString()}
+              {session.stepCount}
             </span>
           </div>
           <div className="stat">

@@ -1,11 +1,13 @@
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
-  weekday: "short",
   month: "short",
   day: "numeric",
+  weekday: "short",
+  hour: "2-digit",
+  minute: "2-digit",
 });
 
 const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
-  weekday: "short",
+  year: "numeric",
   month: "short",
   day: "numeric",
   hour: "2-digit",
