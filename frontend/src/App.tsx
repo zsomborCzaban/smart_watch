@@ -10,13 +10,22 @@ import "./App.css";
 function App() {
   const [sessions, setSessions] = useState<HikingSession[]>([]);
   const [weight, setWeight] = useState(0);
-  const { isConnected: isWatchConnected, activeSession: wshActiveSession } =
-    useWatchStatus(`ws://${window.location.host}/api/ws`);
+  const {
+    isConnected: isWatchConnected,
+    activeSession: wshActiveSession,
+    isActiveSession,
+  } = useWatchStatus(`ws://${window.location.host}/api/ws`);
 
   useEffect(() => {
     api.getAllSessions().then(setSessions).catch(console.error);
     api.getWeight().then(setWeight).catch(console.error);
   }, []);
+
+  useEffect(() => {
+    if (!isActiveSession) {
+      api.getAllSessions().then(setSessions).catch(console.error);
+    }
+  }, [isActiveSession]);
 
   const activeSession = sessions.find((s) => s.isActive) ?? null;
   const activeDisplayedSession = wshActiveSession ?? activeSession;
@@ -51,7 +60,7 @@ function App() {
           <span
             className={`status-text ${isWatchConnected ? "connected" : "disconnected"}`}
           >
-            {isWatchConnected ? "Connected" : "Disconnected"}
+            {isWatchConnected ? "Watch Connected" : "Watch Disconnected"}
           </span>
         </div>
       </div>

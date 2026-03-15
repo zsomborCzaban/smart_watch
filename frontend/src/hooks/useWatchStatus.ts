@@ -4,6 +4,7 @@ import type { HikingSession } from "../types";
 export function useWatchStatus(url: string) {
   const [isConnected, setIsConnected] = useState(false);
   const [activeSession, setActiveSession] = useState<HikingSession | null>(null);
+  const isActiveSession = activeSession !== null;
 
   useEffect(() => {
     let ws: WebSocket | null = null;
@@ -49,5 +50,5 @@ export function useWatchStatus(url: string) {
     };
   }, [url]);
 
-  return { isConnected, activeSession };
+  return { isConnected, activeSession, isActiveSession };
 }
