@@ -8,4 +8,5 @@ export interface HikingSession {
   distanceWalked: number;
   bodyWeightKg: number;
   hikeSessionTime?: string;
+  isPaused?: boolean;
 }

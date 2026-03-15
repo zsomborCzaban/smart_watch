@@ -43,7 +43,8 @@ export function ActiveSession({ session }: Props) {
           <div className="stat">
             <span className="stat-label">Status:</span>
             <span className="stat-value">
-              {session.sessionId === "active" ? "Active" : "Paused"}
+              {session.isActive  && "Active"}
+              {session.isPaused && "Paused"}
             </span>
           </div>
         </div>
