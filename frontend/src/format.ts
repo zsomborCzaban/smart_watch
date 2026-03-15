@@ -1,4 +1,4 @@
-const dateFormatter = new Intl.DateTimeFormat(undefined, {
+const dateFormatter = new Intl.DateTimeFormat('en-GB', {
   month: "short",
   day: "numeric",
   weekday: "short",
@@ -6,7 +6,7 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
   minute: "2-digit",
 });
 
-const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
+const dateTimeFormatter = new Intl.DateTimeFormat('en-GB', {
   year: "numeric",
   month: "short",
   day: "numeric",

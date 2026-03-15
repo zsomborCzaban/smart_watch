@@ -22,7 +22,7 @@ export function SessionList({ sessions, onDelete }: Props) {
   return (
     <section className="session-list">
       <h2>Past Sessions</h2>
-      {sessions.sort((a, b) => new Date(b.endTime) > new Date(a.endTime) ? -1 : 1).map((session) => {
+      {sessions.sort((a, b) => new Date(b.endTime) < new Date(a.endTime) ? -1 : 1).map((session) => {
         const isExpanded = expandedId === session.sessionId;
         return (
           <div key={session.sessionId} className="session-card">
