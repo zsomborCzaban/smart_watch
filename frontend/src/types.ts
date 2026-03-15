@@ -6,5 +6,6 @@ export interface HikingSession {
   stepCount: number;
   burnedCalories: number;
   distanceWalked: number;
+  bodyWeightKg: number;
   hikeSessionTime?: string;
 }

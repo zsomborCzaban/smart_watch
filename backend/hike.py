@@ -62,6 +62,7 @@ class HikeSession:
             "stepCount": self.steps,
             "burnedCalories": self.calories_burnt,
             "distanceWalked": round(self.steps * AVERAGE_STRIDE_M),
+            'bodyWeightKg': self.body_weight_kg,
         }
 
     def __repr__(self) -> str:

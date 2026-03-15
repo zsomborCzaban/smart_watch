@@ -72,6 +72,12 @@ export function SessionList({ sessions, onDelete }: Props) {
                       {(session.distanceWalked / 1000).toFixed(2)} km
                     </span>
                   </div>
+                  <div className="stat">
+                    <span className="stat-label">Body Weight</span>
+                    <span className="stat-value">
+                      {session.bodyWeightKg.toFixed(1)} kg
+                    </span>
+                  </div>
                 </div>
                 <button
                   className="delete-btn"
