@@ -2,13 +2,6 @@ import type { HikingSession } from "./types";
 
 const BASE_URL = "/api";
 
-export async function getActiveSession(): Promise<HikingSession | null> {
-  const res = await fetch(`${BASE_URL}/activeSession`);
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error("Failed to fetch active session");
-  return res.json();
-}
-
 export async function getAllSessions(): Promise<HikingSession[]> {
   const res = await fetch(`${BASE_URL}/allSessions`);
   if (!res.ok) throw new Error("Failed to fetch sessions");

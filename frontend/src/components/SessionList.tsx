@@ -22,7 +22,7 @@ export function SessionList({ sessions, onDelete }: Props) {
   return (
     <section className="session-list">
       <h2>Past Sessions</h2>
-      {sessions.map((session) => {
+      {sessions.sort((a, b) => new Date(b.endTime) < new Date(a.endTime) ? -1 : 1).map((session) => {
         const isExpanded = expandedId === session.sessionId;
         return (
           <div key={session.sessionId} className="session-card">
@@ -57,7 +57,7 @@ export function SessionList({ sessions, onDelete }: Props) {
                   <div className="stat">
                     <span className="stat-label">Steps</span>
                     <span className="stat-value">
-                      {session.stepCount.toLocaleString()}
+                      {session.stepCount}
                     </span>
                   </div>
                   <div className="stat">
@@ -70,6 +70,12 @@ export function SessionList({ sessions, onDelete }: Props) {
                     <span className="stat-label">Distance</span>
                     <span className="stat-value">
                       {(session.distanceWalked / 1000).toFixed(2)} km
+                    </span>
+                  </div>
+                  <div className="stat">
+                    <span className="stat-label">Body Weight</span>
+                    <span className="stat-value">
+                      {session.bodyWeightKg.toFixed(1)} kg
                     </span>
                   </div>
                 </div>

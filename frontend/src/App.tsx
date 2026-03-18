@@ -9,15 +9,26 @@ import "./App.css";
 
 function App() {
   const [sessions, setSessions] = useState<HikingSession[]>([]);
-  const [weight, setWeight] = useState(75);
-  const isWatchConnected = useWatchStatus(`ws://${window.location.host}/api/ws`);
+  const [weight, setWeight] = useState(0);
+  const {
+    isConnected: isWatchConnected,
+    activeSession: wshActiveSession,
+    isActiveSession,
+  } = useWatchStatus(`ws://${window.location.host}/api/ws`);
 
   useEffect(() => {
     api.getAllSessions().then(setSessions).catch(console.error);
     api.getWeight().then(setWeight).catch(console.error);
   }, []);
 
+  useEffect(() => {
+    if (!isActiveSession) {
+      api.getAllSessions().then(setSessions).catch(console.error);
+    }
+  }, [isActiveSession]);
+
   const activeSession = sessions.find((s) => s.isActive) ?? null;
+  const activeDisplayedSession = wshActiveSession ?? activeSession;
   const pastSessions = sessions.filter((s) => !s.isActive);
 
   const handleDelete = async (sessionId: string) => {
@@ -43,25 +54,26 @@ function App() {
       <div className="app-header">
         <h1>Hiking Tracker</h1>
         <div className="watch-status">
-          <span className={`status-dot ${isWatchConnected ? "connected" : "disconnected"}`} />
-          <span className={`status-text ${isWatchConnected ? "connected" : "disconnected"}`}>
-            {isWatchConnected ? "Connected" : "Disconnected"}
+          <span
+            className={`status-dot ${isWatchConnected ? "connected" : "disconnected"}`}
+          />
+          <span
+            className={`status-text ${isWatchConnected ? "connected" : "disconnected"}`}
+          >
+            {isWatchConnected ? "Watch Connected" : "Watch Disconnected"}
           </span>
         </div>
       </div>
 
-      {activeSession ? (
-        <ActiveSession session={activeSession} />
+      {activeDisplayedSession ? (
+        <ActiveSession session={activeDisplayedSession} />
       ) : (
         <div className="no-active-card">
           <p>No active hiking session</p>
         </div>
       )}
 
-      <Settings
-        weight={weight}
-        onWeightChange={handleWeightChange}
-      />
+      <Settings weight={weight} onWeightChange={handleWeightChange} />
 
       <SessionList sessions={pastSessions} onDelete={handleDelete} />
     </div>
