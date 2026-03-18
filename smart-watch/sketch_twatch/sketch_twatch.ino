@@ -45,6 +45,10 @@ unsigned long lastCacheFlushTime = 0;
 std::vector<String> offlineCache;
 const size_t MAX_CACHE_SIZE = 50; 
 
+// --- Battery Event State ---
+bool lastChargingState = false;
+unsigned long lastBatteryCheckTime = 0;
+
 // --- Calorie Write Callback ---
 class CalorieCallback: public BLECharacteristicCallbacks {
     void onWrite(BLECharacteristic *pChar) {
@@ -108,6 +112,10 @@ void setup() {
     Serial.begin(115200);
     ttgo = TTGOClass::getWatch();
     ttgo->begin();
+
+    // --- ENABLE BATTERY SENSOR ---
+    ttgo->power->adc1Enable(AXP202_BATT_VOL_ADC1 | AXP202_BATT_CUR_ADC1, true);
+
     ttgo->openBL();
 
     // --- CRITICAL STEP COUNTER FIX ---
@@ -143,10 +151,26 @@ void setup() {
     pAdvertising->addServiceUUID(SERVICE_UUID);
     pAdvertising->setScanResponse(true); 
     BLEDevice::startAdvertising();
+
+    // Initialize the baseline charging state
+    lastChargingState = ttgo->power->isChargeing();
     drawUI();
 }
 
 void loop() {
+    // --- Charging Status Event Handler ---
+    // Checks the battery status once every 1000ms (1 second)
+    if (millis() - lastBatteryCheckTime > 1000) {
+        lastBatteryCheckTime = millis();
+        bool currentChargingState = ttgo->power->isChargeing();
+        
+        // If the state changed from plugged to unplugged (or vice versa), update UI
+        if (currentChargingState != lastChargingState) {
+            lastChargingState = currentChargingState;
+            updateTopDisplay();
+        }
+    }
+
     if (!deviceConnected && oldDeviceConnected) {
         delay(500); pServer->startAdvertising(); oldDeviceConnected = deviceConnected; updateTopDisplay(); 
     }
@@ -228,14 +252,38 @@ void drawUI() {
 
 void updateTopDisplay() {
     ttgo->tft->fillRect(0, 0, 240, 80, TFT_BLACK);
+    
+    // --- STATE DISPLAY ---
     String stateStr = (currentState == ACTIVE) ? "ACTIVE" : (currentState == PAUSED ? "PAUSED" : "STOPPED");
+    ttgo->tft->setTextColor(TFT_WHITE);
     ttgo->tft->drawString("State: " + stateStr, 10, 5, 2);
+    
+    // --- BATTERY & CHARGING LOGIC ---
+    int batPercentage = ttgo->power->getBattPercentage();
+    // Note: The AXP20X library uses the spelling "isChargeing"
+    bool isCharging = ttgo->power->isChargeing(); 
+    
+    String batStr = String(batPercentage) + "%";
+    if (isCharging) {
+        batStr += " (+)";
+        ttgo->tft->setTextColor(TFT_GREEN); 
+    } else {
+        ttgo->tft->setTextColor(TFT_WHITE);
+    }
+    ttgo->tft->drawString("Bat: " + batStr, 130, 5, 2); // Shifted slightly to fit the (+)
+
+    // --- SENSOR DATA ---
+    ttgo->tft->setTextColor(TFT_WHITE);
     ttgo->tft->drawString("Steps: " + String(currentSteps), 10, 25, 2);
+    
     ttgo->tft->setTextColor(TFT_ORANGE);
     ttgo->tft->drawString("kcal: " + String(currentCalories), 120, 25, 2);
+    
+    // --- SYSTEM INFO ---
     ttgo->tft->setTextColor(TFT_WHITE);
     ttgo->tft->drawString(deviceConnected ? "BLE: Ok" : "BLE: Disconnected", 10, 45, 2);
     ttgo->tft->setTextColor(TFT_YELLOW);
     ttgo->tft->drawString("MAC: " + bleMacAddress, 10, 65, 1);
-    ttgo->tft->setTextColor(TFT_WHITE);
+    
+    ttgo->tft->setTextColor(TFT_WHITE); // Reset for future draws
 }
