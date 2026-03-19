@@ -204,6 +204,10 @@ class HubBluetooth:
             logger.info("Session resumed.")
             return
 
+        if state.is_active and state.is_paused:
+            logger.debug("Ignoring step update while session is paused.")
+            return
+
         # — start new session on first step after idle
         if not state.is_active:
             try:
