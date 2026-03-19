@@ -47,6 +47,8 @@ uint32_t sessionStartSteps = 0;
 int32_t currentSteps = 0;
 int currentCalories = 0; 
 bool lastChargingState = false;
+uint32_t pauseStartSensorSteps = 0;
+int32_t pausedStepsOffset = 0;
 
 // --- Timers & Caching ---
 unsigned long lastLogTime = 0;
@@ -194,6 +196,8 @@ void handleTouchInput() {
                 currentState = ACTIVE; 
                 sessionStartSteps = ttgo->bma->getCounter(); 
                 currentSteps = 0; currentCalories = 0; offlineCache.clear();
+                pauseStartSensorSteps = 0;
+                pausedStepsOffset = 0;
                 sendOrCache(generateJSONPayload(0));
             } else if (x >= 120 && currentState != STOPPED) {
                 currentState = STOPPED; 
@@ -202,9 +206,14 @@ void handleTouchInput() {
         } else if (y >= 160) {
             if (x < 120 && currentState == ACTIVE) {
                 currentState = PAUSED;
+                pauseStartSensorSteps = ttgo->bma->getCounter();
                 sendOrCache(generateJSONPayload(-2)); 
             } else if (x >= 120 && currentState == PAUSED) {
                 currentState = ACTIVE;
+                uint32_t resumeSensorSteps = ttgo->bma->getCounter();
+                if (resumeSensorSteps >= pauseStartSensorSteps) {
+                    pausedStepsOffset += (int32_t)(resumeSensorSteps - pauseStartSensorSteps);
+                }
                 sendOrCache(generateJSONPayload(-3)); 
             }
         }
@@ -227,7 +236,11 @@ void handleTasks() {
         // Update UI if plugged/unplugged, OR if we are currently tracking a hike
         if (stateChanged || currentState == ACTIVE) {
             if (currentState == ACTIVE) {
-                currentSteps = ttgo->bma->getCounter() - sessionStartSteps;
+                int32_t rawSessionSteps = (int32_t)ttgo->bma->getCounter() - (int32_t)sessionStartSteps;
+                currentSteps = rawSessionSteps - pausedStepsOffset;
+                if (currentSteps < 0) {
+                    currentSteps = 0;
+                }
             }
             updateTopDisplay(); 
         }
