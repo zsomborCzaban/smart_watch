@@ -110,6 +110,8 @@ class ActiveSessionState:
         self.is_paused: bool = False
         self.device_id: str = ""
         self.start_time: Optional[datetime] = None
+        self.pause_started_at: Optional[datetime] = None
+        self.total_paused_seconds: float = 0.0
         self.step_count: int = 0
         self.calories_burnt: int = 0
         self.last_data_time: Optional[datetime] = None
@@ -122,6 +124,8 @@ class ActiveSessionState:
             self.is_paused = False
             self.device_id = device_id
             self.start_time = start_time
+            self.pause_started_at = None
+            self.total_paused_seconds = 0.0
             self.step_count = 0
             self.calories_burnt = 0
             self.last_data_time = datetime.now(timezone.utc)
@@ -136,14 +140,32 @@ class ActiveSessionState:
     def pause(self) -> None:
         """Pause the active session."""
         with self._lock:
-            if self.is_active:
+            if self.is_active and not self.is_paused:
                 self.is_paused = True
+                self.pause_started_at = datetime.now(timezone.utc)
+                self.last_data_time = self.pause_started_at
 
     def resume(self) -> None:
         """Resume the paused session."""
         with self._lock:
-            if self.is_active:
+            if self.is_active and self.is_paused:
+                now = datetime.now(timezone.utc)
+                if self.pause_started_at is not None:
+                    self.total_paused_seconds += (now - self.pause_started_at).total_seconds()
+                self.pause_started_at = None
                 self.is_paused = False
+                self.last_data_time = now
+
+    def _effective_duration_seconds(self, now: datetime) -> float:
+        """Return elapsed session seconds excluding paused time."""
+        if self.start_time is None:
+            return 0.0
+
+        paused_seconds = self.total_paused_seconds
+        if self.is_paused and self.pause_started_at is not None:
+            paused_seconds += (now - self.pause_started_at).total_seconds()
+
+        return max(0.0, (now - self.start_time).total_seconds() - paused_seconds)
 
     def finalize(self) -> Optional[HikeSession]:
         """Atomically end the active session and return it as a HikeSession.
@@ -155,7 +177,7 @@ class ActiveSessionState:
             if not self.is_active:
                 return None
             now = datetime.now(timezone.utc)
-            duration = (now - self.start_time).total_seconds() if self.start_time else 0.0
+            duration = self._effective_duration_seconds(now)
             session = HikeSession(
                 device_id=self.device_id,
                 start_time=self.start_time,
@@ -166,6 +188,8 @@ class ActiveSessionState:
             )
             self.is_active = False
             self.is_paused = False
+            self.pause_started_at = None
+            self.total_paused_seconds = 0.0
             self.step_count = 0
             self.calories_burnt = 0
             self.last_data_time = None
@@ -180,7 +204,7 @@ class ActiveSessionState:
         with self._lock:
             if self.is_active and self.start_time:
                 now = datetime.now(timezone.utc)
-                total_s = int((now - self.start_time).total_seconds())
+                total_s = int(self._effective_duration_seconds(now))
                 h, rem = divmod(total_s, 3600)
                 m, s = divmod(rem, 60)
                 session_time_iso = f"PT{h:02d}H{m:02d}M{s:02d}S"
