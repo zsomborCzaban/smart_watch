@@ -17,7 +17,15 @@ void handleTouch(int16_t x, int16_t y);
 
 TTGOClass *ttgo;
 
-// --- BLE State ---
+// ==========================================
+// GLOBALS & CONFIGURATION
+// ==========================================
+// --- BLE Configuration ---
+#define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+#define STEP_DATA_CHAR_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
+#define CALORIE_CHAR_UUID   "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
+#define SYNC_TIME_CHAR_UUID "6e400004-b5a3-f393-e0a9-e50e24dcca9e"
+
 BLEServer* pServer = NULL;
 BLECharacteristic* pNotifyChar = NULL;
 BLECharacteristic* pCalorieChar = NULL;
@@ -38,14 +46,20 @@ String deviceId = "twatch_hiker_1";
 uint32_t sessionStartSteps = 0;
 int32_t currentSteps = 0;
 int currentCalories = 0; 
+bool lastChargingState = false;
 
+// --- Timers & Caching ---
 unsigned long lastLogTime = 0;
-const unsigned long logInterval = 5000; 
+unsigned long lastSecUpdate = 0;
 unsigned long lastCacheFlushTime = 0;
+const unsigned long logInterval = 5000; 
 std::vector<String> offlineCache;
 const size_t MAX_CACHE_SIZE = 50; 
 
-// --- Calorie Write Callback ---
+// Forward Declarations
+void updateTopDisplay();
+void drawUI();
+
 class CalorieCallback: public BLECharacteristicCallbacks {
     void onWrite(BLECharacteristic *pChar) {
         std::string rxValue = pChar->getValue();
@@ -55,8 +69,7 @@ class CalorieCallback: public BLECharacteristicCallbacks {
             int brace = payload.indexOf('}');
             if (colon != -1 && brace != -1) {
                 currentCalories = payload.substring(colon + 1, brace).toInt();
-                ttgo->tft->setTextColor(TFT_ORANGE, TFT_BLACK);
-                ttgo->tft->drawString("kcal: " + String(currentCalories), 120, 25, 2);
+                updateTopDisplay(); // Force UI update on new data
             }
         }
     }
@@ -71,11 +84,9 @@ class TimeSyncCallback: public BLECharacteristicCallbacks {
             int braceIndex = payload.indexOf('}');
             if (colonIndex != -1 && braceIndex != -1) {
                 String timestampStr = payload.substring(colonIndex + 1, braceIndex);
-                timestampStr.trim();
                 time_t unixTime = timestampStr.toInt();
                 struct timeval tv = {unixTime, 0};
                 settimeofday(&tv, nullptr);
-                Serial.println("Time synced from backend: " + timestampStr);
             }
         }
     }
@@ -104,21 +115,35 @@ String generateJSONPayload(int32_t steps) {
            "\", \"step_count\":" + String(steps) + ", \"checksum\":\"" + String(checksum_hex) + "\"}";
 }
 
+void sendOrCache(String payload) {
+    if (deviceConnected && offlineCache.empty()) {
+        pNotifyChar->setValue(payload.c_str());
+        pNotifyChar->notify();
+    } else if (offlineCache.size() < MAX_CACHE_SIZE) {
+        offlineCache.push_back(payload);
+    }
+}
+
+
 void setup() {
     Serial.begin(115200);
     ttgo = TTGOClass::getWatch();
     ttgo->begin();
-    ttgo->openBL();
 
-    // --- CRITICAL STEP COUNTER FIX ---
+    // Enable Battery Sensor
+    ttgo->power->adc1Enable(AXP202_BATT_VOL_ADC1 | AXP202_BATT_CUR_ADC1, true);
+    lastChargingState = ttgo->power->isChargeing();
+
+    // Setup BMA Step Counter
     ttgo->bma->begin();
-    ttgo->bma->enableAccel(); // Wakes up the hardware
-    ttgo->bma->enableFeature(BMA423_STEP_CNTR, true); // Turns on step logic
-    ttgo->bma->resetStepCounter(); // Set hardware to zero
-    // ---------------------------------
+    ttgo->bma->enableAccel(); 
+    ttgo->bma->enableFeature(BMA423_STEP_CNTR, true); 
+    ttgo->bma->resetStepCounter(); 
 
+    ttgo->openBL();
     ttgo->gps_begin();
     
+    // BLE Setup
     BLEDevice::init("TWatch_Hiker_BLE");
     BLEDevice::setMTU(512); 
     bleMacAddress = BLEDevice::getAddress().toString().c_str();
@@ -138,81 +163,101 @@ void setup() {
     pSyncTimeChar->setCallbacks(new TimeSyncCallback());
 
     pService->start();
-
     BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
     pAdvertising->addServiceUUID(SERVICE_UUID);
     pAdvertising->setScanResponse(true); 
     BLEDevice::startAdvertising();
+
     drawUI();
 }
 
-void loop() {
+void handleBLE() {
     if (!deviceConnected && oldDeviceConnected) {
         delay(500); pServer->startAdvertising(); oldDeviceConnected = deviceConnected; updateTopDisplay(); 
     }
     if (deviceConnected && !oldDeviceConnected) {
         oldDeviceConnected = deviceConnected; updateTopDisplay(); 
     }
-    
-    // GPS Feed
+}
+
+void handleGPS() {
     if (ttgo->hwSerial && ttgo->hwSerial->available()) {
         while (ttgo->hwSerial->available()) ttgo->gps->encode(ttgo->hwSerial->read());
     }
+}
 
-    // Touch
+void handleTouchInput() {
     int16_t x, y;
-    if (ttgo->getTouch(x, y)) { handleTouch(x, y); delay(150); }
+    if (ttgo->getTouch(x, y)) {
+        if (y > 80 && y < 160) {
+            if (x < 120 && currentState == STOPPED) {
+                currentState = ACTIVE; 
+                sessionStartSteps = ttgo->bma->getCounter(); 
+                currentSteps = 0; currentCalories = 0; offlineCache.clear();
+                sendOrCache(generateJSONPayload(0));
+            } else if (x >= 120 && currentState != STOPPED) {
+                currentState = STOPPED; 
+                sendOrCache(generateJSONPayload(-1));
+            }
+        } else if (y >= 160) {
+            if (x < 120 && currentState == ACTIVE) {
+                currentState = PAUSED;
+                sendOrCache(generateJSONPayload(-2)); 
+            } else if (x >= 120 && currentState == PAUSED) {
+                currentState = ACTIVE;
+                sendOrCache(generateJSONPayload(-3)); 
+            }
+        }
+        drawUI(); 
+        delay(150); // Debounce
+    }
+}
 
-    // Logging
-    if (currentState == ACTIVE && (millis() - lastLogTime >= logInterval)) {
-        lastLogTime = millis();
-        // Read current hardware steps
-        currentSteps = ttgo->bma->getCounter() - sessionStartSteps;
-        sendOrCache(generateJSONPayload(currentSteps));
-        updateTopDisplay(); 
+void handleTasks() {
+    unsigned long currentMillis = millis();
+
+    // 1. One-Second Tasks: Battery Check & Real-time UI Refresh
+    if (currentMillis - lastSecUpdate >= 1000) {
+        lastSecUpdate = currentMillis;
+        
+        bool currentCharging = ttgo->power->isChargeing();
+        bool stateChanged = (currentCharging != lastChargingState);
+        lastChargingState = currentCharging;
+
+        // Update UI if plugged/unplugged, OR if we are currently tracking a hike
+        if (stateChanged || currentState == ACTIVE) {
+            if (currentState == ACTIVE) {
+                currentSteps = ttgo->bma->getCounter() - sessionStartSteps;
+            }
+            updateTopDisplay(); 
+        }
     }
 
-    // Cache Flush
-    if (deviceConnected && !offlineCache.empty() && (millis() - lastCacheFlushTime > 100)) {
-        lastCacheFlushTime = millis();
+    // 2. Logging Task (5 seconds)
+    if (currentState == ACTIVE && (currentMillis - lastLogTime >= logInterval)) {
+        lastLogTime = currentMillis;
+        sendOrCache(generateJSONPayload(currentSteps));
+    }
+
+    // 3. Cache Flush Task (100ms)
+    if (deviceConnected && !offlineCache.empty() && (currentMillis - lastCacheFlushTime > 100)) {
+        lastCacheFlushTime = currentMillis;
         pNotifyChar->setValue(offlineCache.front().c_str());
         pNotifyChar->notify();
         offlineCache.erase(offlineCache.begin());
     }
 }
 
-void sendOrCache(String payload) {
-    if (deviceConnected && offlineCache.empty()) {
-        pNotifyChar->setValue(payload.c_str());
-        pNotifyChar->notify();
-    } else if (offlineCache.size() < MAX_CACHE_SIZE) {
-        offlineCache.push_back(payload);
-    }
+void loop() {
+    handleBLE();
+    handleGPS();
+    handleTasks();
+    handleTouchInput();
 }
 
-void handleTouch(int16_t x, int16_t y) {
-    if (y > 80 && y < 160) {
-        if (x < 120 && currentState == STOPPED) {
-            currentState = ACTIVE; 
-            sessionStartSteps = ttgo->bma->getCounter(); // Capture start baseline
-            currentSteps = 0; currentCalories = 0; offlineCache.clear();
-            sendOrCache(generateJSONPayload(0));
-        } else if (x >= 120 && currentState != STOPPED) {
-            currentState = STOPPED; 
-            sendOrCache(generateJSONPayload(-1));
-        }
-    } else if (y >= 160) {
-        if (x < 120 && currentState == ACTIVE) {
-            currentState = PAUSED;
-            sendOrCache(generateJSONPayload(-2)); // -2 signals PAUSE
-        } else if (x >= 120 && currentState == PAUSED) {
-            currentState = ACTIVE;
-            sendOrCache(generateJSONPayload(-3)); // -3 signals RESUME
-        }
-    }
-    drawUI(); 
-}
-
+// ==========================================
+// UI DRAWING
+// ==========================================
 void drawUI() {
     ttgo->tft->fillScreen(TFT_BLACK);
     updateTopDisplay();
@@ -228,14 +273,31 @@ void drawUI() {
 
 void updateTopDisplay() {
     ttgo->tft->fillRect(0, 0, 240, 80, TFT_BLACK);
+    
+    // --- STATE ---
     String stateStr = (currentState == ACTIVE) ? "ACTIVE" : (currentState == PAUSED ? "PAUSED" : "STOPPED");
+    ttgo->tft->setTextColor(TFT_WHITE);
     ttgo->tft->drawString("State: " + stateStr, 10, 5, 2);
+    
+    // --- BATTERY ---
+    String batStr = String(ttgo->power->getBattPercentage()) + "%";
+    if (lastChargingState) {
+        batStr += " (+)";
+        ttgo->tft->setTextColor(TFT_GREEN); 
+    } else {
+        ttgo->tft->setTextColor(TFT_WHITE);
+    }
+    ttgo->tft->drawString("Bat: " + batStr, 130, 5, 2); 
+
+    // --- SENSORS ---
+    ttgo->tft->setTextColor(TFT_WHITE);
     ttgo->tft->drawString("Steps: " + String(currentSteps), 10, 25, 2);
     ttgo->tft->setTextColor(TFT_ORANGE);
     ttgo->tft->drawString("kcal: " + String(currentCalories), 120, 25, 2);
+    
+    // --- SYSTEM ---
     ttgo->tft->setTextColor(TFT_WHITE);
-    ttgo->tft->drawString(deviceConnected ? "BLE: OK" : "BLE: DC", 10, 45, 2);
+    ttgo->tft->drawString(deviceConnected ? "BLE: Ok" : "BLE: Disconnected", 10, 45, 2);
     ttgo->tft->setTextColor(TFT_YELLOW);
     ttgo->tft->drawString("MAC: " + bleMacAddress, 10, 65, 1);
-    ttgo->tft->setTextColor(TFT_WHITE);
 }
