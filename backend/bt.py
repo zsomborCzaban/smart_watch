@@ -213,9 +213,10 @@ class HubBluetooth:
             state.start_session(payload["device_id"], start_dt)
             logger.info("Hiking session started for device '%s'.", payload["device_id"])
 
-        # — calculate and store updated counters using pause-aware ingestion
+        # — calculate and store updated calories
         weight_kg = hubdb.get_weight()
-        calories = state.ingest_raw_steps(step_count, weight_kg)
+        calories = hike.calc_kcal(step_count, weight_kg)
+        state.update(step_count, calories)
 
         # — send calorie response to the watch (req3 / req6)
         response = json.dumps({"calories_burned": calories}).encode("utf-8")

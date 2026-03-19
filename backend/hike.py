@@ -114,11 +114,6 @@ class ActiveSessionState:
         self.calories_burnt: int = 0
         self.last_data_time: Optional[datetime] = None
         self.bt_connected: bool = False
-        self._paused_at: Optional[datetime] = None
-        self._total_paused_seconds: float = 0.0
-        self._pause_step_snapshot: int = 0
-        self._ignored_steps_after_pause: int = 0
-        self._pending_resume_rebase: bool = False
 
     def start_session(self, device_id: str, start_time: datetime) -> None:
         """Begin a new session; resets all counters."""
@@ -130,77 +125,25 @@ class ActiveSessionState:
             self.step_count = 0
             self.calories_burnt = 0
             self.last_data_time = datetime.now(timezone.utc)
-            self._paused_at = None
-            self._total_paused_seconds = 0.0
-            self._pause_step_snapshot = 0
-            self._ignored_steps_after_pause = 0
-            self._pending_resume_rebase = False
 
     def update(self, step_count: int, calories_burnt: int) -> None:
-        """Set counters and refresh the data-received timestamp."""
+        """Update step / calorie counters and refresh the data-received timestamp."""
         with self._lock:
             self.step_count = step_count
             self.calories_burnt = calories_burnt
             self.last_data_time = datetime.now(timezone.utc)
 
-    def ingest_raw_steps(self, raw_step_count: int, weight_kg: float) -> int:
-        """Process raw watch step count and return the effective calorie total.
-
-        While paused, incoming step updates are ignored for session counters.
-        On the first packet after resume, all steps accumulated during the pause
-        are rebased out so only active-period steps are counted.
-        """
-        with self._lock:
-            now = datetime.now(timezone.utc)
-            self.last_data_time = now
-
-            if self.is_paused:
-                return self.calories_burnt
-
-            if self._pending_resume_rebase:
-                paused_steps = max(0, raw_step_count - self._pause_step_snapshot)
-                self._ignored_steps_after_pause += paused_steps
-                self._pending_resume_rebase = False
-
-            effective_steps = max(0, raw_step_count - self._ignored_steps_after_pause)
-            # Keep counters monotonic in case the watch sends out-of-order values.
-            if effective_steps < self.step_count:
-                effective_steps = self.step_count
-
-            self.step_count = effective_steps
-            self.calories_burnt = calc_kcal(effective_steps, weight_kg)
-            return self.calories_burnt
-
     def pause(self) -> None:
         """Pause the active session."""
         with self._lock:
-            if self.is_active and not self.is_paused:
+            if self.is_active:
                 self.is_paused = True
-                self._paused_at = datetime.now(timezone.utc)
-                self._pause_step_snapshot = self.step_count
 
     def resume(self) -> None:
         """Resume the paused session."""
         with self._lock:
-            if self.is_active and self.is_paused:
+            if self.is_active:
                 self.is_paused = False
-                now = datetime.now(timezone.utc)
-                if self._paused_at is not None:
-                    self._total_paused_seconds += (now - self._paused_at).total_seconds()
-                self._paused_at = None
-                self._pending_resume_rebase = True
-
-    def _active_duration_seconds(self, now: datetime) -> float:
-        """Return elapsed session time excluding paused intervals."""
-        if self.start_time is None:
-            return 0.0
-
-        paused_now = 0.0
-        if self.is_paused and self._paused_at is not None:
-            paused_now = (now - self._paused_at).total_seconds()
-
-        duration = (now - self.start_time).total_seconds() - self._total_paused_seconds - paused_now
-        return max(0.0, duration)
 
     def finalize(self) -> Optional[HikeSession]:
         """Atomically end the active session and return it as a HikeSession.
@@ -212,7 +155,7 @@ class ActiveSessionState:
             if not self.is_active:
                 return None
             now = datetime.now(timezone.utc)
-            duration = self._active_duration_seconds(now)
+            duration = (now - self.start_time).total_seconds() if self.start_time else 0.0
             session = HikeSession(
                 device_id=self.device_id,
                 start_time=self.start_time,
@@ -226,11 +169,6 @@ class ActiveSessionState:
             self.step_count = 0
             self.calories_burnt = 0
             self.last_data_time = None
-            self._paused_at = None
-            self._total_paused_seconds = 0.0
-            self._pause_step_snapshot = 0
-            self._ignored_steps_after_pause = 0
-            self._pending_resume_rebase = False
             return session
 
     def snapshot(self) -> dict:
@@ -242,7 +180,7 @@ class ActiveSessionState:
         with self._lock:
             if self.is_active and self.start_time:
                 now = datetime.now(timezone.utc)
-                total_s = int(self._active_duration_seconds(now))
+                total_s = int((now - self.start_time).total_seconds())
                 h, rem = divmod(total_s, 3600)
                 m, s = divmod(rem, 60)
                 session_time_iso = f"PT{h:02d}H{m:02d}M{s:02d}S"
