@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
+import asyncio
 
 from fastapi.testclient import TestClient
+import pytest
 
 import hike
 import wserver
@@ -102,3 +104,90 @@ def test_set_and_get_weight(monkeypatch) -> None:
     assert set_response.status_code == 204
     assert get_response.status_code == 200
     assert get_response.json() == {"weight": 82.3}
+
+
+def test_delete_session_success_returns_204(monkeypatch) -> None:
+    hubdb = FakeHubDB()
+    hubdb.sessions = [hike.HikeSession(session_id=3)]
+    monkeypatch.setattr(wserver, "_hubdb", hubdb)
+
+    client = TestClient(wserver.app)
+    response = client.delete("/api/session/3")
+
+    assert response.status_code == 204
+    assert hubdb.get_session(3) is None
+
+
+def test_websocket_connect_and_disconnect(monkeypatch) -> None:
+    monkeypatch.setattr(wserver, "_ws_clients", [])
+    client = TestClient(wserver.app)
+
+    with client.websocket_connect("/api/ws") as websocket:
+        websocket.send_text("ping")
+
+    assert wserver._ws_clients == []
+
+
+def test_broadcast_removes_dead_clients(monkeypatch) -> None:
+    class DeadWS:
+        async def send_text(self, _payload):
+            raise RuntimeError("socket closed")
+
+    class AliveWS:
+        def __init__(self):
+            self.sent = []
+
+        async def send_text(self, payload):
+            self.sent.append(payload)
+
+    dead = DeadWS()
+    alive = AliveWS()
+    monkeypatch.setattr(wserver, "_ws_clients", [dead, alive])
+
+    asyncio.run(wserver._broadcast({"type": "session_update", "connected": True}))
+
+    assert dead not in wserver._ws_clients
+    assert alive in wserver._ws_clients
+    assert len(alive.sent) == 1
+
+
+def test_broadcast_state_emits_snapshot(monkeypatch) -> None:
+    emitted = []
+
+    async def fake_broadcast(data):
+        emitted.append(data)
+        raise asyncio.CancelledError()
+
+    async def fake_sleep(_seconds):
+        return None
+
+    state = FakeState(is_active=True, snapshot_data={"connected": True, "isActive": True})
+    monkeypatch.setattr(wserver, "_state", state)
+    monkeypatch.setattr(wserver, "_broadcast", fake_broadcast)
+    monkeypatch.setattr(wserver.asyncio, "sleep", fake_sleep)
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(wserver.broadcast_state())
+
+    assert emitted == [{"type": "session_update", "connected": True, "isActive": True}]
+
+
+def test_get_uvicorn_config_without_tls(monkeypatch, tmp_path) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = wserver.get_uvicorn_config()
+
+    assert cfg.ssl_certfile is None
+    assert cfg.ssl_keyfile is None
+    assert cfg.host == wserver.SERVER_HOST
+    assert cfg.port == wserver.SERVER_PORT
+
+
+def test_get_uvicorn_config_with_tls(monkeypatch, tmp_path) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "cert.pem").write_text("cert")
+    (tmp_path / "key.pem").write_text("key")
+
+    cfg = wserver.get_uvicorn_config()
+
+    assert cfg.ssl_certfile == "cert.pem"
+    assert cfg.ssl_keyfile == "key.pem"
