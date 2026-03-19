@@ -46,7 +46,6 @@ String deviceId = "twatch_hiker_1";
 uint32_t sessionStartSteps = 0;
 int32_t currentSteps = 0;
 int currentCalories = 0; 
-uint32_t pausedSensorSteps = 0;
 bool lastChargingState = false;
 
 // --- Timers & Caching ---
@@ -194,27 +193,18 @@ void handleTouchInput() {
             if (x < 120 && currentState == STOPPED) {
                 currentState = ACTIVE; 
                 sessionStartSteps = ttgo->bma->getCounter(); 
-                pausedSensorSteps = 0;
                 currentSteps = 0; currentCalories = 0; offlineCache.clear();
                 sendOrCache(generateJSONPayload(0));
             } else if (x >= 120 && currentState != STOPPED) {
                 currentState = STOPPED; 
-                pausedSensorSteps = 0;
                 sendOrCache(generateJSONPayload(-1));
             }
         } else if (y >= 160) {
             if (x < 120 && currentState == ACTIVE) {
                 currentState = PAUSED;
-                pausedSensorSteps = ttgo->bma->getCounter();
                 sendOrCache(generateJSONPayload(-2)); 
             } else if (x >= 120 && currentState == PAUSED) {
-                uint32_t resumeSensorSteps = ttgo->bma->getCounter();
-                if (resumeSensorSteps > pausedSensorSteps) {
-                    sessionStartSteps += (resumeSensorSteps - pausedSensorSteps);
-                }
                 currentState = ACTIVE;
-                currentSteps = ttgo->bma->getCounter() - sessionStartSteps;
-                pausedSensorSteps = 0;
                 sendOrCache(generateJSONPayload(-3)); 
             }
         }
