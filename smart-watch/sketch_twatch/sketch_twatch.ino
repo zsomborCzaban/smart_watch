@@ -252,8 +252,9 @@ void handleTasks() {
         }
     }
 
-    // 2. Logging Task (5 seconds)
-    if (currentState == ACTIVE && (currentMillis - lastLogTime >= logInterval)) {
+    // 2. Logging Task (1s if connected, 5s if offline)
+    unsigned long currentLogInterval = deviceConnected ? 1000 : 5000;
+    if (currentState == ACTIVE && (currentMillis - lastLogTime >= currentLogInterval)) {
         lastLogTime = currentMillis;
         sendOrCache(generateJSONPayload(currentSteps));
     }
