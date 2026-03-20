@@ -10,12 +10,11 @@ import "./App.css";
 function App() {
   const [sessions, setSessions] = useState<HikingSession[]>([]);
   const [weight, setWeight] = useState(0);
-  const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
   const {
     isConnected: isWatchConnected,
     activeSession: wshActiveSession,
     isActiveSession,
-  } = useWatchStatus(`${wsProtocol}://${window.location.host}/api/ws`);
+  } = useWatchStatus(`ws://${window.location.host}/api/ws`);
 
   useEffect(() => {
     api.getAllSessions().then(setSessions).catch(console.error);
