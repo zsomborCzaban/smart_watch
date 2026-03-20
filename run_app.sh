@@ -14,6 +14,17 @@ else
     echo "No requirements.txt found, skipping..."
 fi
 
+# Ensure backend TLS certificate exists (used by backend/wserver.py)
+if [ ! -f "cert.pem" ] || [ ! -f "key.pem" ]; then
+    echo "HTTPS certificate not found. Generating self-signed certificate..."
+    openssl req -x509 -newkey rsa:4096 -sha256 -days 365 -nodes \
+        -keyout key.pem \
+        -out cert.pem \
+        -subj "/CN=localhost"
+else
+    echo "Existing HTTPS certificate found (cert.pem/key.pem)."
+fi
+
 # Run backend in the background
 echo "Starting Backend..."
 python3 receiver.py & 
