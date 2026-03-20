@@ -8,7 +8,6 @@
 #define LILYGO_WATCH_2020_V2
 #define LILYGO_WATCH_HAS_GPS
 #include <LilyGoWatch.h>
-#include <vector>
 
 // Forward declarations
 void drawUI();
@@ -50,15 +49,14 @@ bool lastChargingState = false;
 uint32_t pauseStartSensorSteps = 0;
 int32_t pausedStepsOffset = 0;
 
-// --- Timers & Caching ---
+// --- Timers & Offline State Tracking ---
 unsigned long lastLogTime = 0;
 unsigned long lastSecUpdate = 0;
-unsigned long lastCacheFlushTime = 0;
-const unsigned long logInterval = 5000; 
-std::vector<String> offlineCache;
-const size_t MAX_CACHE_SIZE = 50; 
 
-// Forward Declarations
+// Track state changes that happened while disconnected
+bool missedPause = false;
+bool missedContinue = false;
+
 void updateTopDisplay();
 void drawUI();
 
@@ -117,15 +115,13 @@ String generateJSONPayload(int32_t steps) {
            "\", \"step_count\":" + String(steps) + ", \"checksum\":\"" + String(checksum_hex) + "\"}";
 }
 
-void sendOrCache(String payload) {
-    if (deviceConnected && offlineCache.empty()) {
+// Replaced sendOrCache with simple sendData
+void sendData(String payload) {
+    if (deviceConnected) {
         pNotifyChar->setValue(payload.c_str());
         pNotifyChar->notify();
-    } else if (offlineCache.size() < MAX_CACHE_SIZE) {
-        offlineCache.push_back(payload);
     }
 }
-
 
 void setup() {
     Serial.begin(115200);
@@ -175,10 +171,34 @@ void setup() {
 
 void handleBLE() {
     if (!deviceConnected && oldDeviceConnected) {
-        delay(500); pServer->startAdvertising(); oldDeviceConnected = deviceConnected; updateTopDisplay(); 
+        delay(500); 
+        pServer->startAdvertising(); 
+        oldDeviceConnected = deviceConnected; 
+        updateTopDisplay(); 
     }
     if (deviceConnected && !oldDeviceConnected) {
-        oldDeviceConnected = deviceConnected; updateTopDisplay(); 
+        oldDeviceConnected = deviceConnected; 
+        updateTopDisplay(); 
+        
+        // Reconnect Logic: Process missing offline states
+        if (currentState == PAUSED && missedPause) {
+            // User paused while offline: send current data, then pause signal
+            sendData(generateJSONPayload(currentSteps));
+            sendData(generateJSONPayload(-2));
+            missedPause = false;
+        } 
+        else if (currentState == ACTIVE && missedContinue) {
+            // User paused AND continued while offline: send pause signal, continue signal, then fresh data
+            sendData(generateJSONPayload(-2)); 
+            sendData(generateJSONPayload(-3)); 
+            sendData(generateJSONPayload(currentSteps));
+            missedContinue = false;
+            missedPause = false; // Clear both just in case
+        } 
+        else if (currentState == ACTIVE || currentState == PAUSED) {
+            // Normal reconnect: just blast out the freshest data
+            sendData(generateJSONPayload(currentSteps));
+        }
     }
 }
 
@@ -195,13 +215,15 @@ void handleTouchInput() {
             if (x < 120 && currentState == STOPPED) {
                 currentState = ACTIVE; 
                 sessionStartSteps = ttgo->bma->getCounter(); 
-                currentSteps = 0; currentCalories = 0; offlineCache.clear();
+                currentSteps = 0; currentCalories = 0; 
                 pauseStartSensorSteps = 0;
                 pausedStepsOffset = 0;
-                sendOrCache(generateJSONPayload(0));
+                missedPause = false;
+                missedContinue = false;
+                sendData(generateJSONPayload(0));
             } else if (x >= 120 && currentState != STOPPED) {
                 currentState = STOPPED; 
-                sendOrCache(generateJSONPayload(-1));
+                sendData(generateJSONPayload(-1));
             }
         } else if (y >= 160) {
             if (x < 120 && currentState == ACTIVE) {
@@ -212,15 +234,21 @@ void handleTouchInput() {
                 if (currentSteps < 0) {
                     currentSteps = 0;
                 }
-                sendOrCache(generateJSONPayload(currentSteps));
-                sendOrCache(generateJSONPayload(-2)); 
+                
+                if (!deviceConnected) missedPause = true;
+
+                sendData(generateJSONPayload(currentSteps));
+                sendData(generateJSONPayload(-2)); 
             } else if (x >= 120 && currentState == PAUSED) {
                 currentState = ACTIVE;
                 uint32_t resumeSensorSteps = ttgo->bma->getCounter();
                 if (resumeSensorSteps >= pauseStartSensorSteps) {
                     pausedStepsOffset += (int32_t)(resumeSensorSteps - pauseStartSensorSteps);
                 }
-                sendOrCache(generateJSONPayload(-3)); 
+                
+                if (!deviceConnected) missedContinue = true;
+
+                sendData(generateJSONPayload(-3)); 
             }
         }
         drawUI(); 
@@ -252,19 +280,12 @@ void handleTasks() {
         }
     }
 
-    // 2. Logging Task (1s if connected, 5s if offline)
-    unsigned long currentLogInterval = deviceConnected ? 1000 : 5000;
-    if (currentState == ACTIVE && (currentMillis - lastLogTime >= currentLogInterval)) {
+    // 2. Logging Task (Only triggers if active AND connected)
+    if (currentState == ACTIVE && (currentMillis - lastLogTime >= 5000)) {
         lastLogTime = currentMillis;
-        sendOrCache(generateJSONPayload(currentSteps));
-    }
-
-    // 3. Cache Flush Task (100ms)
-    if (deviceConnected && !offlineCache.empty() && (currentMillis - lastCacheFlushTime > 100)) {
-        lastCacheFlushTime = currentMillis;
-        pNotifyChar->setValue(offlineCache.front().c_str());
-        pNotifyChar->notify();
-        offlineCache.erase(offlineCache.begin());
+        if (deviceConnected) {
+            sendData(generateJSONPayload(currentSteps));
+        }
     }
 }
 
