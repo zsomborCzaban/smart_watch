@@ -34,7 +34,7 @@ def test_hike_session_to_dict_shape() -> None:
     assert payload["bodyWeightKg"] == 72.5
 
 
-def test_active_session_pause_resume_rebases_paused_steps() -> None:
+def test_active_session_pause_resume_uses_watch_session_steps() -> None:
     state = hike.ActiveSessionState()
     state.start_session("watch-01", datetime.now(timezone.utc))
 
@@ -48,13 +48,10 @@ def test_active_session_pause_resume_rebases_paused_steps() -> None:
     assert state.calories_burnt == paused_kcal
 
     state.resume()
-    # First packet after resume should rebase away pause-period movement.
-    state.ingest_raw_steps(170, 70.0)
-    assert state.step_count == 100
-
+    # The watch already sends pause-adjusted session steps.
     state.ingest_raw_steps(175, 70.0)
-    assert state.step_count == 105
-    assert state.calories_burnt == hike.calc_kcal(105, 70.0)
+    assert state.step_count == 175
+    assert state.calories_burnt == hike.calc_kcal(175, 70.0)
 
 
 def test_finalize_returns_session_and_resets_state() -> None:
