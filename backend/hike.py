@@ -15,7 +15,7 @@ DEFAULT_WEIGHT_KG = 70.0  # fallback body weight when none is stored
 def calc_kcal(steps: int, weight_kg: float) -> int:
     """MET-based calorie estimate adjusted for body weight.
 
-    Formula: kcal = MET × weight_kg × (steps × time_per_step_hours)
+    Formula: kcal = MET * weight_kg * (steps * time_per_step_hours)
 
     Args:
         steps: total step count.
