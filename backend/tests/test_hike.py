@@ -42,10 +42,10 @@ def test_active_session_pause_resume_uses_watch_session_steps() -> None:
     assert state.step_count == 100
 
     state.pause()
-    paused_kcal = state.calories_burnt
     state.ingest_raw_steps(150, 70.0)
-    assert state.step_count == 100
-    assert state.calories_burnt == paused_kcal
+    # While paused, backend counters should still mirror watch updates.
+    assert state.step_count == 150
+    assert state.calories_burnt == hike.calc_kcal(150, 70.0)
 
     state.resume()
     # The watch already sends pause-adjusted session steps.
