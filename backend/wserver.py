@@ -1,15 +1,15 @@
-"""HTTPS / WebSocket web server (req7, req9, req11).
+"""HTTPS / WebSocket web server.
 
 Endpoints consumed by the web UI
 ---------------------------------
     GET    /api/activeSession        – live session snapshot (404 when idle)
     GET    /api/allSessions          – all sessions, active one included
     DELETE /api/session/{session_id} – delete a completed session
-    POST   /api/setWeight            – store the user’s body weight (req8/req10)
+    POST   /api/setWeight            – store the user’s body weight
     GET    /api/weight               – retrieve the stored body weight
-    WS     /api/ws                   – real-time push every second (req11)
+    WS     /api/ws                   – real-time push every second
 
-HTTPS (req7)
+HTTPS
 -----------
 Enabled when cert.pem and key.pem are present in the working directory.
 Generate a self-signed certificate for development:
@@ -99,7 +99,7 @@ async def delete_session(session_id: int) -> None:
 
 @app.post("/api/setWeight", status_code=204)
 async def set_weight(body: WeightRequest) -> None:
-    """Persist the user’s body weight (req8 / req10)."""
+    """Persist the user’s body weight."""
     if _hubdb is None:
         raise HTTPException(status_code=503, detail="Service not ready")
     _hubdb.save_weight(body.weight)
@@ -113,7 +113,7 @@ async def get_weight() -> dict[str, float]:
     return {"weight": _hubdb.get_weight()}
 
 
-# ── WebSocket (req11) ──────────────────────────────────────────────────────────
+# ── WebSocket ──────────────────────────────────────────────────────────
 
 @app.websocket("/api/ws")
 async def websocket_endpoint(ws: WebSocket) -> None:
@@ -150,7 +150,7 @@ async def _broadcast(data: dict) -> None:
 async def broadcast_state() -> None:
     """Push the live session state to all WebSocket clients every second.
 
-    Runs as a background task so the UI always reflects the latest data (req11).
+    Runs as a background task so the UI always reflects the latest data.
     The `connected` field in the payload is consumed by useWatchStatus().
     """
     while True:
