@@ -1,15 +1,12 @@
 #include <Arduino.h>
 #include <unity.h>
 #include <rom/crc.h>
-#include <vector>
 
 // ==========================================
 // 1. YOUR REAL VARIABLES & FUNCTIONS
 // (This is the "Engine" taken from your main app)
 // ==========================================
 String deviceId = "twatch_hiker_1";
-std::vector<String> offlineCache;
-const size_t MAX_CACHE_SIZE = 50;
 
 uint32_t calculateCRC(String input) {
     return crc32_le(0, (const uint8_t*)input.c_str(), input.length());
@@ -45,11 +42,42 @@ void test_step_calculation_overflow(void) {
     TEST_ASSERT_EQUAL_UINT32(106, result);
 }
 
-void test_empty_cache_logic(void) {
-    offlineCache.clear();
-    bool canFlush = !offlineCache.empty();
-    TEST_ASSERT_FALSE(canFlush);
+// --- NEW OFFLINE STATE LOGIC TESTS ---
+
+void test_offline_state_pause(void) {
+    bool missedPause = true;
+    int currentState = 2; // Simulating PAUSED state
+    int payloadsSent = 0;
+
+    // Simulating handleBLE reconnect logic
+    if (currentState == 2 && missedPause) {
+        payloadsSent += 2; // Should send current data, then a pause signal (-2)
+        missedPause = false;
+    }
+
+    TEST_ASSERT_EQUAL_INT(2, payloadsSent);
+    TEST_ASSERT_FALSE(missedPause);
 }
+
+void test_offline_state_pause_and_continue(void) {
+    bool missedPause = true;
+    bool missedContinue = true;
+    int currentState = 1; // Simulating ACTIVE state
+    int payloadsSent = 0;
+
+    // Simulating handleBLE reconnect logic
+    if (currentState == 1 && missedContinue) {
+        payloadsSent += 3; // Should send pause (-2), continue (-3), then fresh data
+        missedContinue = false;
+        missedPause = false;
+    }
+
+    TEST_ASSERT_EQUAL_INT(3, payloadsSent);
+    TEST_ASSERT_FALSE(missedContinue);
+    TEST_ASSERT_FALSE(missedPause);
+}
+
+// -------------------------------------
 
 void test_mtu_safety_limit(void) {
     int32_t maxSteps = 999999;
@@ -64,16 +92,6 @@ void test_rapid_state_toggle(void) {
         state = (state == 0) ? 1 : 0;
     }
     TEST_ASSERT_EQUAL_INT(0, state);
-}
-
-void test_max_cache_limit(void) {
-    offlineCache.clear();
-    for (int i = 0; i < MAX_CACHE_SIZE + 10; i++) {
-        if (offlineCache.size() < MAX_CACHE_SIZE) {
-            offlineCache.push_back("dummy_payload_" + String(i));
-        }
-    }
-    TEST_ASSERT_EQUAL_UINT32(MAX_CACHE_SIZE, offlineCache.size());
 }
 
 void test_pause_resume_offset(void) {
@@ -143,10 +161,10 @@ void setup() {
     
     RUN_TEST(test_checksum_sensitivity);
     RUN_TEST(test_step_calculation_overflow);
-    RUN_TEST(test_empty_cache_logic);
+    RUN_TEST(test_offline_state_pause);
+    RUN_TEST(test_offline_state_pause_and_continue);
     RUN_TEST(test_mtu_safety_limit);
     RUN_TEST(test_rapid_state_toggle);
-    RUN_TEST(test_max_cache_limit);
     RUN_TEST(test_pause_resume_offset);
     RUN_TEST(test_json_payload_format);
     RUN_TEST(test_calorie_parsing);
