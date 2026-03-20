@@ -47,6 +47,7 @@ int32_t pausedStepsOffset = 0;
 // --- Timers & Offline State Tracking ---
 unsigned long lastLogTime = 0;
 unsigned long lastSecUpdate = 0;
+unsigned long lastTouchTime = 0; // Added for non-blocking touch debounce
 
 // Track state changes that happened while disconnected
 bool missedPause = false;
@@ -205,7 +206,16 @@ void handleGPS() {
 
 void handleTouchInput() {
     int16_t x, y;
+    unsigned long currentMillis = millis();
+
+    // Only process a touch if 150ms have passed since the last one (Non-blocking debounce)
+    if (currentMillis - lastTouchTime < 150) {
+        return; 
+    }
+
     if (ttgo->getTouch(x, y)) {
+        lastTouchTime = currentMillis; // Record the time of this touch
+
         if (y > 80 && y < 160) {
             if (x < 120 && currentState == STOPPED) {
                 currentState = ACTIVE; 
@@ -247,7 +257,6 @@ void handleTouchInput() {
             }
         }
         drawUI(); 
-        delay(150); // Debounce
     }
 }
 
@@ -276,7 +285,7 @@ void handleTasks() {
     }
 
     // 2. Logging Task (Only triggers if active AND connected)
-    if (currentState == ACTIVE && (currentMillis - lastLogTime >= 5000)) {
+    if (currentState == ACTIVE && (currentMillis - lastLogTime >= 1000)) {
         lastLogTime = currentMillis;
         if (deviceConnected) {
             sendData(generateJSONPayload(currentSteps));
