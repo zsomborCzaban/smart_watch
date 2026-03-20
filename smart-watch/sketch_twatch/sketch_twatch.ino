@@ -207,6 +207,12 @@ void handleTouchInput() {
             if (x < 120 && currentState == ACTIVE) {
                 currentState = PAUSED;
                 pauseStartSensorSteps = ttgo->bma->getCounter();
+                int32_t rawSessionSteps = (int32_t)ttgo->bma->getCounter() - (int32_t)sessionStartSteps;
+                currentSteps = rawSessionSteps - pausedStepsOffset;
+                if (currentSteps < 0) {
+                    currentSteps = 0;
+                }
+                sendOrCache(generateJSONPayload(currentSteps));
                 sendOrCache(generateJSONPayload(-2)); 
             } else if (x >= 120 && currentState == PAUSED) {
                 currentState = ACTIVE;
