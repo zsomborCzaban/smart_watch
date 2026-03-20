@@ -15,7 +15,7 @@ DEFAULT_WEIGHT_KG = 70.0  # fallback body weight when none is stored
 def calc_kcal(steps: int, weight_kg: float) -> int:
     """MET-based calorie estimate adjusted for body weight.
 
-    Formula: kcal = MET × weight_kg × (steps × time_per_step_hours)
+    Formula: kcal = MET * weight_kg * (steps * time_per_step_hours)
 
     Args:
         steps: total step count.
@@ -213,7 +213,7 @@ class ActiveSessionState:
     def snapshot(self) -> dict:
         """Return a thread-safe JSON-serialisable snapshot for API responses.
 
-        Provides all fields expected by the web UI (req9) plus the WebSocket
+        Provides all fields expected by the web UI plus the WebSocket
         `connected` boolean consumed by useWatchStatus.
         """
         with self._lock:
@@ -237,7 +237,6 @@ class ActiveSessionState:
                 "stepCount": self.step_count,
                 "burnedCalories": self.calories_burnt,
                 "distanceWalked": round(self.step_count * AVERAGE_STRIDE_M),
-                # extra fields for WebSocket / requirements
                 "connected": self.bt_connected,
                 "hikeSessionTime": session_time_iso,
             }

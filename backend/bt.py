@@ -3,22 +3,22 @@
 The hub operates as a BLE central (client). The smartwatch exposes a custom
 GATT service with two characteristics:
 
-* STEP_DATA_CHAR_UUID  – Notify  – watch → hub  (step-update JSON, req2)
-* CALORIE_CHAR_UUID    – Write   – hub  → watch (calorie-response JSON, req3)
+* STEP_DATA_CHAR_UUID  - Notify  - watch → hub
+* CALORIE_CHAR_UUID    - Write   - hub  → watch
 
-Incoming message format  (req2 + mandatory checksum field):
+Incoming message format:
     {"device_id": "str", "timestamp": "ISO-8601", "step_count": int,
      "checksum": "CRC32-hex-8chars"}
 
 A step_count of -1 signals an explicit session-end event from the watch button.
 If no data is received for SESSION_TIMEOUT_SECONDS (3600 s), the session is
-automatically ended (req5).
+automatically ended.
 
-Outgoing message format (req3):
+Outgoing message format:
     {"calories_burned": int}
 
-The CRC32 field guards against in-transit data corruption (req).
-BLE 5.0 native pairing / bonding provides link-layer encryption (req1).
+The CRC32 field guards against in-transit data corruption.
+BLE 5.0 native pairing / bonding provides link-layer encryption.
 """
 
 import asyncio
@@ -47,7 +47,7 @@ STEP_DATA_CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8"  # Notify
 CALORIE_CHAR_UUID   = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"  # Write
 SYNC_TIME_CHAR_UUID = "6e400004-b5a3-f393-e0a9-e50e24dcca9e"  # Write
 
-SESSION_TIMEOUT_SECONDS = 3600  # req5: auto-end the session after 1 h of silence
+SESSION_TIMEOUT_SECONDS = 3600  # auto-end the session after 1 h of silence
 RECONNECT_INTERVAL_SEC  = 5     # seconds to wait between reconnect attempts
 
 
@@ -84,7 +84,7 @@ class HubBluetooth:
     * A reconnection loop that discovers the watch, subscribes to step
       notifications, and handles data until the connection drops.
     * A timeout loop that auto-ends the session if no data is received for
-      SESSION_TIMEOUT_SECONDS, regardless of BLE connection state (req5).
+      SESSION_TIMEOUT_SECONDS, regardless of BLE connection state.
 
     Usage::
 
@@ -170,8 +170,8 @@ class HubBluetooth:
     ) -> None:
         """Validate an incoming BLE notification, update state, and reply.
 
-        Called at every step during an active session (req4).
-        Sends a calorie response back to the watch within the same call (req6).
+        Called at every step during an active session.
+        Sends a calorie response back to the watch within the same call.
         """
         # — decode
         try:
@@ -180,7 +180,7 @@ class HubBluetooth:
             logger.warning("BLE: cannot decode message – %s", exc)
             return
 
-        # — checksum (req: checksums ensure step-count data is not corrupted)
+        # — checksum (checksums ensure step-count data is not corrupted)
         if not _validate_payload(payload):
             logger.warning("BLE: checksum mismatch – message discarded.")
             return
@@ -217,7 +217,7 @@ class HubBluetooth:
         weight_kg = hubdb.get_weight()
         calories = state.ingest_raw_steps(step_count, weight_kg)
 
-        # — send calorie response to the watch (req3 / req6)
+        # — send calorie response to the watch
         response = json.dumps({"calories_burned": calories}).encode("utf-8")
         try:
             await client.write_gatt_char(CALORIE_CHAR_UUID, response, response=False)
@@ -231,7 +231,7 @@ class HubBluetooth:
         state: hike.ActiveSessionState,
         hubdb: db.HubDatabase,
     ) -> None:
-        """Check for the 1-hour inactivity timeout every 60 seconds (req5).
+        """Check for the 1-hour inactivity timeout every 60 seconds.
 
         Runs independently of the BLE connection so a session is always
         ended even when the watch is physically out of range.
@@ -244,7 +244,7 @@ class HubBluetooth:
                 ).total_seconds()
                 if elapsed >= SESSION_TIMEOUT_SECONDS:
                     logger.warning(
-                        "Session auto-ended: no data for %.0f s (req5).", elapsed
+                        "Session auto-ended: no data for %.0f s.", elapsed
                     )
                     await self._finalize_session(state, hubdb)
 
