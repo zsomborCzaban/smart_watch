@@ -16,7 +16,6 @@ export function useWatchStatus(url: string) {
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          console.log("Received WebSocket message:", data);
           if (typeof data.type === "string") {
             if (data.type === "session_update") {
               if(data.isActive === true){
