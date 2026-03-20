@@ -61,6 +61,7 @@ const size_t MAX_CACHE_SIZE = 50;
 // Forward Declarations
 void updateTopDisplay();
 void drawUI();
+int32_t getEffectiveSessionSteps();
 
 class CalorieCallback: public BLECharacteristicCallbacks {
     void onWrite(BLECharacteristic *pChar) {
@@ -115,6 +116,26 @@ String generateJSONPayload(int32_t steps) {
     sprintf(checksum_hex, "%08x", checksum_num);
     return "{\"device_id\":\"" + deviceId + "\", \"timestamp\":\"" + timestamp + 
            "\", \"step_count\":" + String(steps) + ", \"checksum\":\"" + String(checksum_hex) + "\"}";
+}
+
+int32_t getEffectiveSessionSteps() {
+    if (currentState == STOPPED) {
+        return 0;
+    }
+
+    int32_t sensorNow = (int32_t)ttgo->bma->getCounter();
+    int32_t rawSessionSteps = sensorNow - (int32_t)sessionStartSteps;
+
+    int32_t pausedNowOffset = pausedStepsOffset;
+    if (currentState == PAUSED) {
+        pausedNowOffset += (sensorNow - (int32_t)pauseStartSensorSteps);
+    }
+
+    int32_t effective = rawSessionSteps - pausedNowOffset;
+    if (effective < 0) {
+        effective = 0;
+    }
+    return effective;
 }
 
 void sendOrCache(String payload) {
@@ -200,6 +221,8 @@ void handleTouchInput() {
                 pausedStepsOffset = 0;
                 sendOrCache(generateJSONPayload(0));
             } else if (x >= 120 && currentState != STOPPED) {
+                currentSteps = getEffectiveSessionSteps();
+                sendOrCache(generateJSONPayload(currentSteps));
                 currentState = STOPPED; 
                 sendOrCache(generateJSONPayload(-1));
             }
@@ -236,11 +259,7 @@ void handleTasks() {
         // Update UI if plugged/unplugged, OR if we are currently tracking a hike
         if (stateChanged || currentState == ACTIVE) {
             if (currentState == ACTIVE) {
-                int32_t rawSessionSteps = (int32_t)ttgo->bma->getCounter() - (int32_t)sessionStartSteps;
-                currentSteps = rawSessionSteps - pausedStepsOffset;
-                if (currentSteps < 0) {
-                    currentSteps = 0;
-                }
+                currentSteps = getEffectiveSessionSteps();
             }
             updateTopDisplay(); 
         }
