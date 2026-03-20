@@ -134,13 +134,15 @@ class ActiveSessionState:
         """Process raw watch step count and return the effective calorie total.
 
         The watch sends session-relative step counts, already adjusted for
-        pause/resume. The backend therefore uses raw_step_count directly,
-        including while paused, so late/smoothed watch updates stay reflected
-        in the backend state.
+        pause/resume. The backend therefore uses raw_step_count directly.
+        While paused, incoming updates are ignored for session counters.
         """
         with self._lock:
             now = datetime.now(timezone.utc)
             self.last_data_time = now
+
+            if self.is_paused:
+                return self.calories_burnt
 
             effective_steps = max(0, raw_step_count)
             # Keep counters monotonic in case the watch sends out-of-order values.
