@@ -3,8 +3,8 @@
 The hub operates as a BLE central (client). The smartwatch exposes a custom
 GATT service with two characteristics:
 
-* STEP_DATA_CHAR_UUID  – Notify  – watch → hub
-* CALORIE_CHAR_UUID    – Write   – hub  → watch
+* STEP_DATA_CHAR_UUID  - Notify  - watch → hub
+* CALORIE_CHAR_UUID    - Write   - hub  → watch
 
 Incoming message format:
     {"device_id": "str", "timestamp": "ISO-8601", "step_count": int,

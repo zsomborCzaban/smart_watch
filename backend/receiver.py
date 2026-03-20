@@ -1,25 +1,8 @@
-"""Main entry point for the Smart Watch hiking tracker backend.
+"""Main entry point for the backend.
 
 Runs the BLE receiver and the HTTPS web server concurrently in the same
 asyncio event loop so real-time step data flows directly to both the
 database and the web UI without inter-process communication.
-
-Quick start
------------
-1. Install dependencies::
-
-       pip install -r requirements.txt
-
-2. Generate a self-signed TLS certificate (optional but recommended)::
-
-       openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem \\
-           -days 365 -nodes -subj "/CN=smartwatch-hub"
-
-3. Set WATCH_BT_ADDRESS in bt.py to the smartwatch’s BLE MAC address.
-
-4. Run::
-
-       python receiver.py
 """
 
 import asyncio

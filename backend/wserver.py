@@ -2,22 +2,12 @@
 
 Endpoints consumed by the web UI
 ---------------------------------
-    GET    /api/activeSession        – live session snapshot (404 when idle)
-    GET    /api/allSessions          – all sessions, active one included
-    DELETE /api/session/{session_id} – delete a completed session
-    POST   /api/setWeight            – store the user’s body weight
-    GET    /api/weight               – retrieve the stored body weight
-    WS     /api/ws                   – real-time push every second
-
-HTTPS
------------
-Enabled when cert.pem and key.pem are present in the working directory.
-Generate a self-signed certificate for development:
-
-    openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem \\
-        -days 365 -nodes -subj "/CN=smartwatch-hub"
-
-For production use a certificate issued by a trusted CA.
+    GET    /api/activeSession        - live session snapshot (404 when idle)
+    GET    /api/allSessions          - all sessions, active one included
+    DELETE /api/session/{session_id} - delete a completed session
+    POST   /api/setWeight            - store the user's body weight
+    GET    /api/weight               - retrieve the stored body weight
+    WS     /api/ws                   - real-time push every second
 """
 
 import asyncio

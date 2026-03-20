@@ -1,14 +1,4 @@
 """SQLite persistence layer for hike sessions and user body weight.
-
-Security notes
---------------
-* All SQL statements use parameter binding (?-placeholders) to prevent
-  SQL-injection attacks.
-* WAL journal mode + PRAGMA synchronous=NORMAL guarantees that completed
-  sessions survive an unexpected power-off (RPi requirement).
-* A single threading.Lock serialises every write so the same HubDatabase
-  instance can safely be shared between the BLE asyncio task and the
-  ASGI web-server without sqlite3 multi-thread conflicts.
 """
 
 import sqlite3
