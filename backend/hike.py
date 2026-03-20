@@ -130,13 +130,6 @@ class ActiveSessionState:
             self._paused_at = None
             self._total_paused_seconds = 0.0
 
-    def update(self, step_count: int, calories_burnt: int) -> None:
-        """Set counters and refresh the data-received timestamp."""
-        with self._lock:
-            self.step_count = step_count
-            self.calories_burnt = calories_burnt
-            self.last_data_time = datetime.now(timezone.utc)
-
     def ingest_raw_steps(self, raw_step_count: int, weight_kg: float) -> int:
         """Process raw watch step count and return the effective calorie total.
 

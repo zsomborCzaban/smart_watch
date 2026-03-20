@@ -57,7 +57,7 @@ def test_active_session_pause_resume_uses_watch_session_steps() -> None:
 def test_finalize_returns_session_and_resets_state() -> None:
     state = hike.ActiveSessionState()
     state.start_session("watch-02", datetime.now(timezone.utc) - timedelta(seconds=100))
-    state.update(42, 11)
+    state.ingest_raw_steps(42, 70.0)
     state._total_paused_seconds = 30.0
 
     session = state.finalize()
@@ -65,7 +65,7 @@ def test_finalize_returns_session_and_resets_state() -> None:
     assert session is not None
     assert session.device_id == "watch-02"
     assert session.steps == 42
-    assert session.calories_burnt == 11
+    assert session.calories_burnt == hike.calc_kcal(42, 70.0)
     assert 68.0 <= session.duration_seconds <= 72.0
 
     assert state.is_active is False
