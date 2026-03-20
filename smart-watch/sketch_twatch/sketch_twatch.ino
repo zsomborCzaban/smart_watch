@@ -33,11 +33,6 @@ bool deviceConnected = false;
 bool oldDeviceConnected = false;
 String bleMacAddress = "";
 
-#define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
-#define STEP_DATA_CHAR_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
-#define CALORIE_CHAR_UUID   "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
-#define SYNC_TIME_CHAR_UUID "6e400004-b5a3-f393-e0a9-e50e24dcca9e"
-
 enum SessionState { STOPPED, ACTIVE, PAUSED };
 SessionState currentState = STOPPED;
 
