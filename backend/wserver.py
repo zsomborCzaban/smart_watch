@@ -2,7 +2,6 @@
 
 Endpoints consumed by the web UI
 ---------------------------------
-    GET    /api/activeSession        - live session snapshot (404 when idle)
     GET    /api/allSessions          - all sessions, active one included
     DELETE /api/session/{session_id} - delete a completed session
     POST   /api/setWeight            - store the user's body weight
